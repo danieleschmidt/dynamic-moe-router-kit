@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  dev:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app/src
+    command: /bin/bash
+    tty: true
+    stdin_open: true
+
+  test:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app/src
+    command: pytest --cov=dynamic_moe_router --cov-report=html
+
+  test-torch:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app/src
+    command: pip install ".[torch]" && pytest tests/ -k "torch"
+
+  test-jax:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app/src
+    command: pip install ".[jax]" && pytest tests/ -k "jax"
+
+  test-tf:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    environment:
+      - PYTHONPATH=/app/src
+    command: pip install ".[tf]" && pytest tests/ -k "tf"
+
+  docs:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "
+        pip install '.[docs]' &&
+        cd docs &&
+        make html &&
+        cd _build/html &&
+        python -m http.server 8000
+      "
+
+  benchmark:
+    build: .
+    volumes:
+      - .:/app
+      - pip-cache:/root/.cache/pip
+      - ./results:/app/results
+    environment:
+      - PYTHONPATH=/app/src
+    command: python -m dynamic_moe_router.benchmark --output results/
+
+volumes:
+  pip-cache:

@@ -1,0 +1,90 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dynamic-moe-router-kit"
+version = "0.1.0"
+description = "Drop-in dynamic-routing layer for Mixture-of-Experts that activates 'just enough' experts per input"
+authors = [{name = "Daniel Schmidt", email = "author@example.com"}]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=1.9.0", "torchvision"]
+jax = ["jax>=0.3.0", "flax>=0.6.0"]
+tf = ["tensorflow>=2.8.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "mypy>=0.991",
+    "ruff>=0.0.261",
+    "pre-commit>=2.20.0",
+]
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.18.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "pytest-xdist>=2.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/dynamic-moe-router-kit"
+Repository = "https://github.com/yourusername/dynamic-moe-router-kit.git"
+Documentation = "https://dynamic-moe-router.readthedocs.io"
+"Bug Tracker" = "https://github.com/yourusername/dynamic-moe-router-kit/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.ruff]
+line-length = 88
+target-version = "py38"
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --cov=dynamic_moe_router --cov-report=html --cov-report=term"
