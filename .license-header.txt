@@ -1,0 +1,2 @@
+Copyright (c) 2024 Dynamic MoE Router Kit Contributors
+Licensed under the MIT License

@@ -1,0 +1,48 @@
+[bandit]
+# Bandit security linter configuration
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Paths to scan
+targets = src/
+
+# Paths to exclude
+exclude_dirs = 
+    /tests/
+    /docs/
+    /build/
+    /dist/
+    /.git/
+    /__pycache__/
+
+# Test IDs to skip (comma-separated)
+skips = 
+    B101,  # assert_used - asserts are OK in tests
+    B601,  # paramiko_calls - false positives on ML models
+    B602,  # subprocess_popen_with_shell_equals_true - controlled usage
+
+# Severity levels: LOW, MEDIUM, HIGH
+# Report issues of medium severity and higher
+confidence = MEDIUM
+severity = MEDIUM
+
+# Output format: csv,custom,html,json,screen,txt,xml,yaml
+format = json
+
+# Number of lines of code to show around issue
+context_lines = 3
+
+# Plugin blacklist (tests to never run)
+plugin_name_blacklist = 
+
+# Maximum number of issues to report per file (0 = no limit)
+max_issues = 0
+
+# Aggregate output by vulnerability ID or by filename
+aggregate = vuln
+
+# Additional options
+quiet = false
+verbose = false
+
+# Custom security baseline (optional)
+# baseline = security-baseline.json
