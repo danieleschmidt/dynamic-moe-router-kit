@@ -1,0 +1,33 @@
+{
+  "security": {
+    "ignore-vulnerabilities": [],
+    "ignore-unpinned-requirements": false,
+    "continue-on-error": false,
+    "audit-and-monitor": true
+  },
+  "alert": {
+    "ignore-severity": [],
+    "ignore-cvss-severity-below": 0.0,
+    "ignore-cvss-unknown-severity": false
+  },
+  "report": {
+    "only-report": ["vulnerabilities"],
+    "output": [
+      {"type": "screen", "detailed": true},
+      {"type": "json", "file": "safety-report.json"}
+    ]
+  },
+  "scan": {
+    "max-depth": 5,
+    "exclude": [
+      "tests/",
+      "docs/",
+      ".git/",
+      "__pycache__/",
+      "*.pyc"
+    ],
+    "include-dev-dependencies": true,
+    "system-scan": false
+  },
+  "policy-file-version": "2.0"
+}

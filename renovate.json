@@ -1,0 +1,119 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base",
+    "security:openssf-scorecard"
+  ],
+  "schedule": ["before 6am on monday"],
+  "timezone": "UTC",
+  "labels": ["dependencies", "automated"],
+  "assignees": ["maintainer-team"],
+  "reviewers": ["security-team"],
+  "prConcurrentLimit": 10,
+  "prHourlyLimit": 2,
+  "commitMessagePrefix": "deps:",
+  "semanticCommits": "enabled",
+  "dependencyDashboard": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"]
+  },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "groupName": "ML Frameworks",
+      "matchPackagePatterns": ["torch", "jax", "flax", "tensorflow"],
+      "schedule": ["before 6am on monday"],
+      "minimumReleaseAge": "7 days",
+      "updateTypes": ["minor", "patch"],
+      "labels": ["ml-frameworks", "dependencies"]
+    },
+    {
+      "groupName": "Security Tools", 
+      "matchPackageNames": ["bandit", "safety", "detect-secrets"],
+      "schedule": ["at any time"],
+      "minimumReleaseAge": "3 days",
+      "labels": ["security", "dependencies"]
+    },
+    {
+      "groupName": "Development Dependencies",
+      "matchPackagePatterns": ["pytest", "black", "isort", "ruff", "mypy", "pre-commit"],
+      "schedule": ["before 6am on tuesday"],
+      "minimumReleaseAge": "3 days", 
+      "labels": ["dev-dependencies", "dependencies"]
+    },
+    {
+      "groupName": "Docker Base Images",
+      "matchDatasources": ["docker"],
+      "schedule": ["before 6am on wednesday"],
+      "minimumReleaseAge": "7 days",
+      "labels": ["docker", "dependencies"]
+    },
+    {
+      "groupName": "GitHub Actions",
+      "matchManagers": ["github-actions"],
+      "schedule": ["before 6am on thursday"],
+      "minimumReleaseAge": "7 days",
+      "labels": ["ci/cd", "dependencies"]
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "enabled": false,
+      "description": "Disable major updates (handle manually)"
+    },
+    {
+      "matchDepTypes": ["devDependencies"],
+      "automerge": true,
+      "automergeType": "pr",
+      "requiredStatusChecks": null,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "matchPackagePatterns": ["security", "vulnerability"],
+      "schedule": ["at any time"],
+      "minimumReleaseAge": "0 days",
+      "labels": ["security", "priority-high"]
+    }
+  ],
+  "pip": {
+    "fileMatch": ["(^|/)([\\w-]*)requirements\\.txt$", "(^|/)pyproject\\.toml$"],
+    "extractVersion": "^(?<version>.+)$"
+  },
+  "docker": {
+    "fileMatch": ["(^|/|\\.)Dockerfile$", "(^|/)Dockerfile\\.[^/]*$"],
+    "versioning": "docker"
+  },
+  "regexManagers": [
+    {
+      "fileMatch": ["^Dockerfile$"],
+      "matchStrings": ["FROM (?<depName>.*?):(?<currentValue>.*?)@sha256"],
+      "datasourceTemplate": "docker"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["^pyproject\\.toml$"],
+      "matchStrings": ["(?<depName>[a-zA-Z0-9-_]+)\\s*[><=~!]+\\s*(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "pypi"
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on saturday"],
+    "commitMessageAction": "Lock file maintenance"
+  },
+  "rebaseWhen": "conflicted",
+  "platformAutomerge": true,
+  "ignorePresets": [":ignoreModulesAndTests"],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/bower_components/**", 
+    "**/vendor/**",
+    "**/examples/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__tests__/**",
+    "**/spec/**"
+  ]
+}
