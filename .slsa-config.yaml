@@ -1,0 +1,90 @@
+# SLSA (Supply-chain Levels for Software Artifacts) Configuration
+# Reference: https://slsa.dev/spec/v1.0/requirements
+
+version: "1.0"
+
+build:
+  level: 3  # Target SLSA Level 3
+  
+  builder:
+    platform: "github-actions"
+    runner: "ubuntu-latest"
+    trusted: true
+    
+  source:
+    repository: "https://github.com/yourusername/dynamic-moe-router-kit"
+    revision_tracking: "git-sha"
+    
+  build_environment:
+    hermetic: true
+    isolated: true
+    parameterless: false
+    
+  materials:
+    - name: "source-code"
+      uri: "git+https://github.com/yourusername/dynamic-moe-router-kit@{GITHUB_SHA}"
+      digest: "{GITHUB_SHA}"
+      
+    - name: "build-dependencies"
+      uri: "pypi://setuptools"
+      lockfile: "pyproject.toml"
+      
+  outputs:
+    - name: "python-wheel"
+      path: "dist/*.whl"
+      digest_algorithm: "sha256"
+      
+    - name: "source-distribution" 
+      path: "dist/*.tar.gz"
+      digest_algorithm: "sha256"
+
+provenance:
+  generator:
+    name: "slsa-github-generator"
+    version: "v1.9.0"
+    
+  build_type: "https://github.com/slsa-framework/slsa-github-generator/tree/main/internal/builders/generic@v1"
+  
+  build_config:
+    entry_point: "python -m build"
+    environment:
+      PYTHONPATH: "/app/src"
+      
+  attestation:
+    format: "in-toto"
+    signature_algorithm: "ecdsa-p256-sha256"
+    
+verification:
+  policy:
+    - name: "require-slsa-provenance"
+      type: "provenance_present"
+      
+    - name: "verify-builder-identity"
+      type: "builder_identity"
+      trusted_builders:
+        - "https://github.com/slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@refs/tags/v1.9.0"
+        
+    - name: "check-source-integrity"
+      type: "source_integrity"
+      
+    - name: "validate-dependencies"
+      type: "dependency_verification"
+      
+security:
+  vulnerability_scanning:
+    enabled: true
+    block_on_severity: "high"
+    
+  secret_scanning:
+    enabled: true
+    patterns:
+      - "api_key"
+      - "secret"
+      - "token"
+      - "password"
+      
+  code_scanning:
+    enabled: true
+    tools:
+      - "codeql"
+      - "semgrep"

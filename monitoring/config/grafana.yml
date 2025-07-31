@@ -1,0 +1,30 @@
+# Grafana configuration for dynamic-moe-router-kit dashboards
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    
+dashboards:
+  - name: "MoE Performance"
+    path: "/var/lib/grafana/dashboards/moe-performance.json"
+    
+  - name: "System Metrics"
+    path: "/var/lib/grafana/dashboards/system-metrics.json"
+    
+  - name: "Model Training"
+    path: "/var/lib/grafana/dashboards/model-training.json"
+
+providers:
+  - name: "dashboards"
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
