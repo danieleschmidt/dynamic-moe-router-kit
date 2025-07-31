@@ -1,0 +1,57 @@
+# SBOM (Software Bill of Materials) Configuration
+# This file configures automated SBOM generation for the project
+
+version: 1
+
+metadata:
+  name: "dynamic-moe-router-kit"
+  version: "0.1.0"
+  description: "Drop-in dynamic-routing layer for Mixture-of-Experts"
+  supplier: "Daniel Schmidt <author@example.com>"
+  namespace: "https://github.com/yourusername/dynamic-moe-router-kit"
+
+formats:
+  - spdx-json
+  - cyclonedx-json
+  - syft-json
+
+output:
+  directory: "./sbom"
+  filename_template: "{name}-{version}-{format}"
+
+sources:
+  - path: "./src"
+    type: "directory"
+  - path: "./pyproject.toml"
+    type: "file"
+  - path: "./requirements*.txt"
+    type: "glob"
+
+exclude_patterns:
+  - "**/__pycache__/**"
+  - "**/.*"
+  - "**/tests/**"
+  - "**/docs/**"
+  - "**/*.pyc"
+
+vulnerability_scanning:
+  enabled: true
+  sources:
+    - "nvd"
+    - "ghsa"
+    - "osv"
+  severity_threshold: "medium"
+
+relationships:
+  include_dev_dependencies: false
+  include_optional_dependencies: true
+  include_transitive: true
+
+signing:
+  enabled: true
+  key_provider: "sigstore"
+  
+compliance_frameworks:
+  - "SLSA"
+  - "NIST-SSDF"
+  - "OpenSSF-Scorecard"

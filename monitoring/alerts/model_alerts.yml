@@ -1,0 +1,48 @@
+# Prometheus alerting rules for dynamic-moe-router-kit
+groups:
+  - name: moe_router_alerts
+    rules:
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes / 1024 / 1024 > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 1GB for {{ $labels.instance }}"
+          
+      - alert: LowExpertUtilization
+        expr: avg(expert_utilization_ratio) < 0.3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low expert utilization"
+          description: "Average expert utilization below 30%"
+          
+      - alert: HighInferenceLatency
+        expr: inference_latency_seconds > 1.0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High inference latency"
+          description: "Inference latency above 1 second"
+          
+      - alert: ModelAccuracyDrop
+        expr: model_accuracy < 0.8
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Model accuracy drop"
+          description: "Model accuracy below 80%"
+          
+      - alert: ExpertLoadImbalance
+        expr: max(expert_load) - min(expert_load) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Expert load imbalance"
+          description: "High variance in expert load distribution"
