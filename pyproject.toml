@@ -56,6 +56,11 @@ Repository = "https://github.com/yourusername/dynamic-moe-router-kit.git"
 Documentation = "https://dynamic-moe-router.readthedocs.io"
 "Bug Tracker" = "https://github.com/yourusername/dynamic-moe-router-kit/issues"
 
+[project.scripts]
+dynamic-moe-benchmark = "dynamic_moe_router.cli.benchmark:main"
+dynamic-moe-profile = "dynamic_moe_router.cli.profile:main"
+dynamic-moe-validate = "dynamic_moe_router.cli.validate:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
