@@ -1,0 +1,76 @@
+# GPU-enabled Dockerfile
+# Supports CUDA for PyTorch, JAX, and TensorFlow
+
+FROM nvidia/cuda:11.8-devel-ubuntu20.04 as base
+
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-dev \
+    python3.10-distutils \
+    python3-pip \
+    git \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Make python3.10 the default python
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
+
+# Upgrade pip
+RUN python -m pip install --upgrade pip
+
+# Set working directory
+WORKDIR /app
+
+# Copy project files
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+COPY tests/ ./tests/
+
+# Install with GPU backends
+RUN pip install --no-cache-dir -e ".[torch,jax,tf]"
+
+# Set CUDA environment variables
+ENV CUDA_HOME=/usr/local/cuda \
+    PATH=${CUDA_HOME}/bin:${PATH} \
+    LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+
+# PyTorch CUDA settings
+ENV TORCH_CUDA_ARCH_LIST="6.1;7.0;7.5;8.0;8.6+PTX" \
+    PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+
+# JAX CUDA settings  
+ENV JAX_PLATFORMS=cuda \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false
+
+# TensorFlow CUDA settings
+ENV TF_FORCE_GPU_ALLOW_GROWTH=true \
+    TF_CPP_MIN_LOG_LEVEL=2
+
+# Set Python environment
+ENV PYTHONPATH=/app/src \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash --uid 1000 moe && \
+    chown -R moe:moe /app
+
+USER moe
+
+# Verify GPU setup
+RUN python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}')" || true
+RUN python -c "import jax; print(f'JAX devices: {jax.devices()}')" || true  
+RUN python -c "import tensorflow as tf; print(f'GPU devices: {tf.config.list_physical_devices(\"GPU\")}')" || true
+
+# Health check with GPU verification
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+    CMD python -c "import dynamic_moe_router; import torch; assert torch.cuda.is_available(); print('GPU health check passed')" || exit 1
+
+# Default command
+CMD ["python", "-m", "pytest", "tests/", "-m", "gpu"]
