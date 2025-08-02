@@ -1,0 +1,80 @@
+name: 🐛 Bug Report
+description: Report a bug or issue with dynamic-moe-router-kit
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting a bug! Please fill out the sections below to help us diagnose and fix the issue.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission Checks
+      options:
+        - label: I searched existing issues and didn't find a duplicate
+          required: true
+        - label: I'm using the latest version of dynamic-moe-router-kit
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe the issue you're experiencing
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Import dynamic_moe_router
+        2. Create router with config...
+        3. Call method...
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened, including error messages
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: |
+        Please provide details about your environment:
+      value: |
+        - OS: [e.g., Ubuntu 20.04, macOS 12.0, Windows 11]
+        - Python version: [e.g., 3.9.7]
+        - dynamic-moe-router-kit version: [e.g., 0.1.0]
+        - Backend: [PyTorch/JAX/TensorFlow]
+        - Backend version: [e.g., torch==1.13.0]
+        - CUDA version (if applicable): [e.g., 11.7]
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs/Stack Trace
+      description: If applicable, add any error messages or stack traces
+      render: shell
