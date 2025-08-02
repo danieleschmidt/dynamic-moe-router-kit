@@ -1,0 +1,446 @@
+{
+  "metrics_schema_version": "1.0",
+  "project": {
+    "name": "dynamic-moe-router-kit",
+    "version": "0.1.0",
+    "description": "Drop-in dynamic-routing layer for Mixture-of-Experts",
+    "repository": "https://github.com/danieleschmidt/dynamic-moe-router-kit",
+    "last_updated": "2024-01-15T00:00:00Z"
+  },
+  "categories": {
+    "development": {
+      "description": "Development process and code quality metrics",
+      "metrics": {
+        "commit_frequency": {
+          "description": "Average commits per week",
+          "target": 10,
+          "threshold_warning": 5,
+          "threshold_critical": 2,
+          "collection_method": "git_log_analysis"
+        },
+        "pull_request_cycle_time": {
+          "description": "Average time from PR creation to merge (hours)",
+          "target": 24,
+          "threshold_warning": 48,
+          "threshold_critical": 168,
+          "collection_method": "github_api"
+        },
+        "code_review_coverage": {
+          "description": "Percentage of PRs with at least one review",
+          "target": 100,
+          "threshold_warning": 90,
+          "threshold_critical": 80,
+          "collection_method": "github_api"
+        },
+        "test_coverage": {
+          "description": "Code coverage percentage",
+          "target": 90,
+          "threshold_warning": 80,
+          "threshold_critical": 70,
+          "collection_method": "codecov_api"
+        },
+        "technical_debt_ratio": {
+          "description": "Technical debt ratio from SonarQube",
+          "target": 5,
+          "threshold_warning": 10,
+          "threshold_critical": 20,
+          "collection_method": "sonarqube_api"
+        }
+      }
+    },
+    "quality": {
+      "description": "Code quality and reliability metrics",
+      "metrics": {
+        "bug_density": {
+          "description": "Number of bugs per 1000 lines of code",
+          "target": 1,
+          "threshold_warning": 3,
+          "threshold_critical": 5,
+          "collection_method": "issue_tracking"
+        },
+        "security_vulnerabilities": {
+          "description": "Number of open security vulnerabilities",
+          "target": 0,
+          "threshold_warning": 1,
+          "threshold_critical": 3,
+          "collection_method": "security_scan_results"
+        },
+        "dependency_freshness": {
+          "description": "Percentage of dependencies that are up-to-date",
+          "target": 95,
+          "threshold_warning": 85,
+          "threshold_critical": 75,
+          "collection_method": "dependency_analysis"
+        },
+        "lint_violations": {
+          "description": "Number of linting violations per 1000 lines",
+          "target": 0,
+          "threshold_warning": 5,
+          "threshold_critical": 20,
+          "collection_method": "linting_tools"
+        },
+        "documentation_coverage": {
+          "description": "Percentage of public APIs with documentation",
+          "target": 95,
+          "threshold_warning": 85,
+          "threshold_critical": 75,
+          "collection_method": "documentation_analysis"
+        }
+      }
+    },
+    "performance": {
+      "description": "Runtime and computational performance metrics",
+      "metrics": {
+        "routing_latency_p95": {
+          "description": "95th percentile routing latency (milliseconds)",
+          "target": 10,
+          "threshold_warning": 25,
+          "threshold_critical": 50,
+          "collection_method": "prometheus_metrics"
+        },
+        "flop_efficiency": {
+          "description": "Average FLOP reduction percentage",
+          "target": 35,
+          "threshold_warning": 25,
+          "threshold_critical": 15,
+          "collection_method": "performance_benchmarks"
+        },
+        "memory_efficiency": {
+          "description": "Memory overhead percentage vs static MoE",
+          "target": 5,
+          "threshold_warning": 15,
+          "threshold_critical": 30,
+          "collection_method": "memory_profiling"
+        },
+        "throughput": {
+          "description": "Tokens processed per second",
+          "target": 1000,
+          "threshold_warning": 750,
+          "threshold_critical": 500,
+          "collection_method": "benchmark_suite"
+        },
+        "accuracy_preservation": {
+          "description": "Accuracy retention vs static baseline (%)",
+          "target": 99,
+          "threshold_warning": 97,
+          "threshold_critical": 95,
+          "collection_method": "model_evaluation"
+        }
+      }
+    },
+    "reliability": {
+      "description": "System reliability and operational metrics",
+      "metrics": {
+        "ci_success_rate": {
+          "description": "Percentage of successful CI builds",
+          "target": 95,
+          "threshold_warning": 90,
+          "threshold_critical": 85,
+          "collection_method": "github_actions_api"
+        },
+        "mean_time_to_recovery": {
+          "description": "Average time to fix broken builds (minutes)",
+          "target": 60,
+          "threshold_warning": 240,
+          "threshold_critical": 1440,
+          "collection_method": "ci_failure_analysis"
+        },
+        "deployment_success_rate": {
+          "description": "Percentage of successful deployments",
+          "target": 98,
+          "threshold_warning": 95,
+          "threshold_critical": 90,
+          "collection_method": "deployment_logs"
+        },
+        "container_startup_time": {
+          "description": "Average container startup time (seconds)",
+          "target": 30,
+          "threshold_warning": 60,
+          "threshold_critical": 120,
+          "collection_method": "container_metrics"
+        },
+        "health_check_uptime": {
+          "description": "Health check success rate percentage",
+          "target": 99.9,
+          "threshold_warning": 99,
+          "threshold_critical": 98,
+          "collection_method": "health_monitoring"
+        }
+      }
+    },
+    "community": {
+      "description": "Community engagement and adoption metrics",
+      "metrics": {
+        "github_stars": {
+          "description": "Number of GitHub repository stars",
+          "target": 1000,
+          "threshold_warning": 100,
+          "threshold_critical": 50,
+          "collection_method": "github_api"
+        },
+        "pypi_downloads": {
+          "description": "Monthly PyPI downloads",
+          "target": 10000,
+          "threshold_warning": 1000,
+          "threshold_critical": 100,
+          "collection_method": "pypi_stats"
+        },
+        "issue_response_time": {
+          "description": "Average time to first response on issues (hours)",
+          "target": 24,
+          "threshold_warning": 72,
+          "threshold_critical": 168,
+          "collection_method": "github_api"
+        },
+        "contributor_count": {
+          "description": "Number of unique contributors",
+          "target": 25,
+          "threshold_warning": 10,
+          "threshold_critical": 5,
+          "collection_method": "git_log_analysis"
+        },
+        "documentation_page_views": {
+          "description": "Monthly documentation page views",
+          "target": 5000,
+          "threshold_warning": 1000,
+          "threshold_critical": 100,
+          "collection_method": "analytics"
+        }
+      }
+    },
+    "business": {
+      "description": "Business and adoption metrics",
+      "metrics": {
+        "production_deployments": {
+          "description": "Known production deployments",
+          "target": 10,
+          "threshold_warning": 3,
+          "threshold_critical": 1,
+          "collection_method": "user_surveys"
+        },
+        "research_citations": {
+          "description": "Number of research paper citations",
+          "target": 50,
+          "threshold_warning": 10,
+          "threshold_critical": 5,
+          "collection_method": "citation_tracking"
+        },
+        "enterprise_adoption": {
+          "description": "Number of enterprise users",
+          "target": 5,
+          "threshold_warning": 2,
+          "threshold_critical": 0,
+          "collection_method": "enterprise_tracking"
+        },
+        "conference_mentions": {
+          "description": "Mentions in conferences/talks",
+          "target": 10,
+          "threshold_warning": 3,
+          "threshold_critical": 1,
+          "collection_method": "mention_tracking"
+        },
+        "integration_count": {
+          "description": "Number of third-party integrations",
+          "target": 20,
+          "threshold_warning": 10,
+          "threshold_critical": 5,
+          "collection_method": "integration_catalog"
+        }
+      }
+    }
+  },
+  "collection_schedule": {
+    "real_time": [
+      "ci_success_rate",
+      "deployment_success_rate",
+      "health_check_uptime"
+    ],
+    "hourly": [
+      "routing_latency_p95",
+      "throughput",
+      "container_startup_time"
+    ],
+    "daily": [
+      "security_vulnerabilities",
+      "test_coverage",
+      "bug_density",
+      "issue_response_time"
+    ],
+    "weekly": [
+      "commit_frequency",
+      "pull_request_cycle_time",
+      "dependency_freshness",
+      "flop_efficiency",
+      "memory_efficiency"
+    ],
+    "monthly": [
+      "pypi_downloads",
+      "documentation_page_views",
+      "technical_debt_ratio",
+      "documentation_coverage"
+    ],
+    "quarterly": [
+      "github_stars",
+      "contributor_count",
+      "production_deployments",
+      "research_citations",
+      "enterprise_adoption"
+    ]
+  },
+  "reporting": {
+    "dashboards": {
+      "executive": {
+        "description": "High-level business and adoption metrics",
+        "metrics": [
+          "github_stars",
+          "pypi_downloads",
+          "production_deployments",
+          "research_citations",
+          "ci_success_rate"
+        ],
+        "update_frequency": "weekly"
+      },
+      "technical": {
+        "description": "Technical performance and quality metrics",
+        "metrics": [
+          "test_coverage",
+          "routing_latency_p95",
+          "flop_efficiency",
+          "security_vulnerabilities",
+          "technical_debt_ratio"
+        ],
+        "update_frequency": "daily"
+      },
+      "operational": {
+        "description": "Operational health and reliability metrics",
+        "metrics": [
+          "ci_success_rate",
+          "deployment_success_rate",
+          "mean_time_to_recovery",
+          "health_check_uptime",
+          "container_startup_time"
+        ],
+        "update_frequency": "real_time"
+      },
+      "community": {
+        "description": "Community engagement and growth metrics",
+        "metrics": [
+          "github_stars",
+          "contributor_count",
+          "issue_response_time",
+          "documentation_page_views",
+          "conference_mentions"
+        ],
+        "update_frequency": "weekly"
+      }
+    },
+    "alerts": {
+      "critical": {
+        "description": "Critical alerts requiring immediate attention",
+        "conditions": [
+          "security_vulnerabilities >= 3",
+          "ci_success_rate < 85",
+          "deployment_success_rate < 90",
+          "health_check_uptime < 98"
+        ],
+        "notification_channels": ["slack", "email", "pagerduty"]
+      },
+      "warning": {
+        "description": "Warning alerts requiring attention within 24 hours",
+        "conditions": [
+          "test_coverage < 80",
+          "routing_latency_p95 > 25",
+          "technical_debt_ratio > 10",
+          "mean_time_to_recovery > 240"
+        ],
+        "notification_channels": ["slack", "email"]
+      },
+      "info": {
+        "description": "Informational alerts for awareness",
+        "conditions": [
+          "github_stars milestone reached",
+          "pypi_downloads milestone reached",
+          "new_contributor_joined"
+        ],
+        "notification_channels": ["slack"]
+      }
+    }
+  },
+  "automation": {
+    "metric_collection": {
+      "github_metrics": {
+        "script": "scripts/collect_github_metrics.py",
+        "schedule": "0 */6 * * *",
+        "dependencies": ["github_api_token"]
+      },
+      "performance_metrics": {
+        "script": "scripts/collect_performance_metrics.py", 
+        "schedule": "0 */4 * * *",
+        "dependencies": ["prometheus_endpoint"]
+      },
+      "quality_metrics": {
+        "script": "scripts/collect_quality_metrics.py",
+        "schedule": "0 2 * * *",
+        "dependencies": ["sonarqube_token", "codecov_token"]
+      }
+    },
+    "reporting": {
+      "weekly_report": {
+        "script": "scripts/generate_weekly_report.py",
+        "schedule": "0 9 * * 1",
+        "output": "reports/weekly/",
+        "recipients": ["team@example.com"]
+      },
+      "monthly_summary": {
+        "script": "scripts/generate_monthly_summary.py",
+        "schedule": "0 9 1 * *",
+        "output": "reports/monthly/",
+        "recipients": ["stakeholders@example.com"]
+      }
+    },
+    "actions": {
+      "dependency_update": {
+        "trigger": "dependency_freshness < 75",
+        "action": "create_dependency_update_pr",
+        "auto_approve": false
+      },
+      "performance_regression": {
+        "trigger": "routing_latency_p95 > 50 OR flop_efficiency < 15",
+        "action": "create_performance_investigation_issue",
+        "labels": ["performance", "urgent"]
+      },
+      "security_alert": {
+        "trigger": "security_vulnerabilities > 0",
+        "action": "create_security_issue",
+        "labels": ["security", "high-priority"]
+      }
+    }
+  },
+  "data_sources": {
+    "github_api": {
+      "endpoint": "https://api.github.com",
+      "authentication": "token",
+      "rate_limit": "5000/hour"
+    },
+    "pypi_stats": {
+      "endpoint": "https://pypistats.org/api",
+      "authentication": "none",
+      "rate_limit": "100/minute"
+    },
+    "prometheus": {
+      "endpoint": "http://prometheus:9090",
+      "authentication": "none",
+      "retention": "30d"
+    },
+    "codecov": {
+      "endpoint": "https://codecov.io/api",
+      "authentication": "token",
+      "rate_limit": "1000/hour"
+    },
+    "sonarqube": {
+      "endpoint": "https://sonarcloud.io/api",
+      "authentication": "token",
+      "rate_limit": "10000/hour"
+    }
+  }
+}
