@@ -1,0 +1,182 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Python cache and artifacts  
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Documentation build
+docs/_build/
+site/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# PyEnv
+.python-version
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings  
+.ropeproject
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# ML/AI specific
+*.pth
+*.pt
+*.ckpt
+checkpoints/
+runs/
+wandb/
+*.msgpack
+*.h5
+saved_model/
+*.onnx
+*.tflite
+*.pb
+experiments/
+outputs/
+results/
+data/
+*.npz
+*.npy
+.tensorboard/
+
+# Temporary files
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Logs
+*.log
+logs/
+
+# Local configuration
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build artifacts
+.ruff_cache/
+.black_cache/
+
+# Security
+*.key
+*.pem
+*.p12
+*.pfx
+.secrets
+
+# Docker itself
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Development tools
+.pre-commit-config.yaml
+.bandit
+.secrets.baseline
+renovate.json
+
+# Documentation source (keep only built docs)
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SECURITY.md
+LICENSE
+
+# Project management
+.todo
+TODO.md
+ROADMAP.md
+PROJECT_CHARTER.md
+
+# Performance profiling
+.prof
+*.prof

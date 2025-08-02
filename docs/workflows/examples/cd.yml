@@ -1,0 +1,520 @@
+# Continuous Deployment Workflow
+# Handles automated releases, PyPI publishing, and documentation deployment
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+      skip_tests:
+        description: 'Skip test execution'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false  # Don't cancel deployments
+
+env:
+  PYTHON_VERSION: '3.10'
+  NODE_VERSION: '18'
+  
+  # Registry settings
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  
+  # Documentation settings
+  DOCS_BRANCH: gh-pages
+  DOCS_DIR: docs/_build/html
+
+jobs:
+  # ============================================================================
+  # DETERMINE DEPLOYMENT CONTEXT
+  # ============================================================================
+  
+  context:
+    name: Deployment Context
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.context.outputs.environment }}
+      version: ${{ steps.context.outputs.version }}
+      is_release: ${{ steps.context.outputs.is_release }}
+      deploy_docs: ${{ steps.context.outputs.deploy_docs }}
+      deploy_pypi: ${{ steps.context.outputs.deploy_pypi }}
+      deploy_docker: ${{ steps.context.outputs.deploy_docker }}
+    
+    steps:
+    - name: Determine deployment context
+      id: context
+      run: |
+        # Determine environment
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          ENVIRONMENT="staging"
+        elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          ENVIRONMENT="production"
+        else
+          ENVIRONMENT="development"
+        fi
+        
+        # Determine version
+        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+          VERSION="${{ github.ref_name }}"
+          IS_RELEASE="true"
+        else
+          VERSION="0.0.0+$(git rev-parse --short HEAD)"
+          IS_RELEASE="false"
+        fi
+        
+        # Determine what to deploy
+        DEPLOY_DOCS="true"
+        DEPLOY_PYPI="${IS_RELEASE}"
+        DEPLOY_DOCKER="true"
+        
+        echo "environment=${ENVIRONMENT}" >> $GITHUB_OUTPUT
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "is_release=${IS_RELEASE}" >> $GITHUB_OUTPUT
+        echo "deploy_docs=${DEPLOY_DOCS}" >> $GITHUB_OUTPUT
+        echo "deploy_pypi=${DEPLOY_PYPI}" >> $GITHUB_OUTPUT
+        echo "deploy_docker=${DEPLOY_DOCKER}" >> $GITHUB_OUTPUT
+        
+        echo "🚀 Deployment Context:"
+        echo "Environment: ${ENVIRONMENT}"
+        echo "Version: ${VERSION}"
+        echo "Is Release: ${IS_RELEASE}"
+        echo "Deploy Docs: ${DEPLOY_DOCS}"
+        echo "Deploy PyPI: ${DEPLOY_PYPI}"
+        echo "Deploy Docker: ${DEPLOY_DOCKER}"
+
+  # ============================================================================
+  # PRE-DEPLOYMENT VALIDATION
+  # ============================================================================
+  
+  validate:
+    name: Pre-deployment Validation
+    runs-on: ubuntu-latest
+    needs: [context]
+    if: ${{ !github.event.inputs.skip_tests }}
+    environment: ${{ needs.context.outputs.environment }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,torch,jax,tf]"
+
+    - name: Run critical tests
+      run: |
+        pytest tests/unit/ tests/integration/ \
+          -v \
+          --cov=dynamic_moe_router \
+          --cov-fail-under=80 \
+          -m "not slow" \
+          --timeout=300
+
+    - name: Validate package build
+      run: |
+        python -m build
+        twine check dist/*
+
+  # ============================================================================
+  # BUILD & RELEASE ARTIFACTS
+  # ============================================================================
+  
+  build:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: [context, validate]
+    if: always() && (needs.validate.result == 'success' || needs.validate.result == 'skipped')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Update version for development builds
+      if: needs.context.outputs.is_release == 'false'
+      run: |
+        # Update version in pyproject.toml for dev builds
+        sed -i 's/version = "[^"]*"/version = "${{ needs.context.outputs.version }}"/' pyproject.toml
+
+    - name: Build package
+      run: |
+        python -m build
+        ls -la dist/
+
+    - name: Generate SBOM
+      run: |
+        pip install cyclonedx-bom
+        cyclonedx-py -o sbom.json
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          dist/
+          sbom.json
+
+  # ============================================================================
+  # DOCKER IMAGE BUILD & PUBLISH
+  # ============================================================================
+  
+  docker:
+    name: Build & Publish Docker Images
+    runs-on: ubuntu-latest
+    needs: [context, build]
+    if: needs.context.outputs.deploy_docker == 'true'
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Log in to Docker Hub
+      if: needs.context.outputs.is_release == 'true'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          ${{ needs.context.outputs.is_release == 'true' && 'dynamic-moe-router' || '' }}
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker images
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          VERSION=${{ needs.context.outputs.version }}
+
+    - name: Build and push GPU image
+      if: needs.context.outputs.is_release == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.gpu
+        platforms: linux/amd64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.context.outputs.version }}-gpu
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-gpu
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push production image
+      if: needs.context.outputs.is_release == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.production
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.context.outputs.version }}-prod
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-prod
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # PYPI PUBLISHING
+  # ============================================================================
+  
+  pypi:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    needs: [context, build]
+    if: needs.context.outputs.deploy_pypi == 'true'
+    environment: production
+    permissions:
+      id-token: write  # For trusted publishing
+    
+    steps:
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+
+    - name: Publish to Test PyPI
+      if: needs.context.outputs.environment == 'staging'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+
+    - name: Publish to PyPI
+      if: needs.context.outputs.environment == 'production'
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
+
+  # ============================================================================
+  # DOCUMENTATION DEPLOYMENT
+  # ============================================================================
+  
+  docs:
+    name: Deploy Documentation
+    runs-on: ubuntu-latest
+    needs: [context, build]
+    if: needs.context.outputs.deploy_docs == 'true'
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install documentation dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[docs]"
+
+    - name: Build documentation
+      run: |
+        cd docs
+        make html
+        
+        # Add version info to docs
+        echo "${{ needs.context.outputs.version }}" > _build/html/VERSION
+        echo "$(date -u)" > _build/html/BUILD_DATE
+
+    - name: Upload documentation artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: documentation
+        path: ${{ env.DOCS_DIR }}
+
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ${{ env.DOCS_DIR }}
+        publish_branch: ${{ env.DOCS_BRANCH }}
+        force_orphan: true
+
+  # ============================================================================
+  # GITHUB RELEASE
+  # ============================================================================
+  
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [context, build, docker, pypi, docs]
+    if: needs.context.outputs.is_release == 'true'
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: build-artifacts
+
+    - name: Generate release notes
+      run: |
+        # Extract version from tag
+        VERSION="${{ needs.context.outputs.version }}"
+        
+        # Generate changelog since last release
+        LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+        
+        if [[ -n "$LAST_TAG" ]]; then
+          echo "## Changes since $LAST_TAG" > RELEASE_NOTES.md
+          git log --pretty=format:"- %s (%h)" $LAST_TAG..HEAD >> RELEASE_NOTES.md
+        else
+          echo "## Initial Release" > RELEASE_NOTES.md
+          echo "First release of dynamic-moe-router-kit" >> RELEASE_NOTES.md
+        fi
+        
+        echo "" >> RELEASE_NOTES.md
+        echo "## Artifacts" >> RELEASE_NOTES.md
+        echo "- 📦 Python Package: [PyPI](https://pypi.org/project/dynamic-moe-router-kit/$VERSION/)" >> RELEASE_NOTES.md
+        echo "- 🐋 Docker Images: [GitHub Container Registry](https://ghcr.io/${{ github.repository }})" >> RELEASE_NOTES.md
+        echo "- 📚 Documentation: [GitHub Pages](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/)" >> RELEASE_NOTES.md
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ needs.context.outputs.version }}
+        name: Release ${{ needs.context.outputs.version }}
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: ${{ contains(needs.context.outputs.version, '-') }}
+        files: |
+          dist/*
+          sbom.json
+        generate_release_notes: true
+
+  # ============================================================================
+  # POST-DEPLOYMENT VERIFICATION
+  # ============================================================================
+  
+  verify:
+    name: Post-deployment Verification
+    runs-on: ubuntu-latest
+    needs: [context, pypi, docker, docs, release]
+    if: always() && needs.context.outputs.is_release == 'true'
+    
+    steps:
+    - name: Verify PyPI package
+      if: needs.pypi.result == 'success'
+      run: |
+        sleep 60  # Wait for PyPI propagation
+        pip install dynamic-moe-router-kit==${{ needs.context.outputs.version }}
+        python -c "import dynamic_moe_router; print(f'Successfully installed version: {dynamic_moe_router.__version__}')"
+
+    - name: Verify Docker image
+      if: needs.docker.result == 'success'
+      run: |
+        docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.context.outputs.version }}
+        docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.context.outputs.version }} \
+          python -c "import dynamic_moe_router; print('Docker image verification successful')"
+
+    - name: Verify documentation
+      if: needs.docs.result == 'success'
+      run: |
+        # Check if documentation is accessible
+        curl -f -s "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/" || \
+          echo "Documentation not yet available (may take a few minutes to deploy)"
+
+  # ============================================================================
+  # DEPLOYMENT SUMMARY & NOTIFICATIONS
+  # ============================================================================
+  
+  summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [context, validate, build, docker, pypi, docs, release, verify]
+    if: always()
+    
+    steps:
+    - name: Deployment Summary
+      run: |
+        echo "🚀 Deployment Summary for ${{ needs.context.outputs.version }}"
+        echo "Environment: ${{ needs.context.outputs.environment }}"
+        echo "Is Release: ${{ needs.context.outputs.is_release }}"
+        echo ""
+        echo "Job Results:"
+        echo "- Validation: ${{ needs.validate.result }}"
+        echo "- Build: ${{ needs.build.result }}"
+        echo "- Docker: ${{ needs.docker.result }}"
+        echo "- PyPI: ${{ needs.pypi.result }}"
+        echo "- Documentation: ${{ needs.docs.result }}"
+        echo "- Release: ${{ needs.release.result }}"
+        echo "- Verification: ${{ needs.verify.result }}"
+
+    - name: Notify on success
+      if: success() && needs.context.outputs.is_release == 'true'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#releases'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: |
+          🚀 Successfully released dynamic-moe-router-kit ${{ needs.context.outputs.version }}
+          
+          📦 PyPI: https://pypi.org/project/dynamic-moe-router-kit/${{ needs.context.outputs.version }}/
+          🐋 Docker: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.context.outputs.version }}
+          📚 Docs: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+          📝 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.context.outputs.version }}
+
+    - name: Notify on failure
+      if: failure()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#releases'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: |
+          ❌ Deployment failed for dynamic-moe-router-kit ${{ needs.context.outputs.version }}
+          
+          Environment: ${{ needs.context.outputs.environment }}
+          Commit: ${{ github.sha }}
+          Author: ${{ github.actor }}
+          
+          Check the workflow logs for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

@@ -1,0 +1,52 @@
+# CODEOWNERS file for dynamic-moe-router-kit
+# This file defines who should be automatically requested for review
+# when changes are made to specific files or directories.
+
+# Global ownership - these users are the default owners for everything
+* @danieleschmidt
+
+# Core source code
+/src/dynamic_moe_router/ @danieleschmidt
+/src/dynamic_moe_router/core/ @danieleschmidt
+/src/dynamic_moe_router/torch/ @danieleschmidt
+/src/dynamic_moe_router/jax/ @danieleschmidt
+/src/dynamic_moe_router/tf/ @danieleschmidt
+
+# Tests require review from core team
+/tests/ @danieleschmidt
+/tests/unit/ @danieleschmidt
+/tests/integration/ @danieleschmidt
+/tests/e2e/ @danieleschmidt
+/tests/performance/ @danieleschmidt
+
+# Configuration files
+pyproject.toml @danieleschmidt
+Dockerfile* @danieleschmidt
+docker-compose.yml @danieleschmidt
+Makefile @danieleschmidt
+
+# CI/CD and automation
+/.github/ @danieleschmidt
+/scripts/ @danieleschmidt
+/.pre-commit-config.yaml @danieleschmidt
+
+# Documentation
+/docs/ @danieleschmidt
+README.md @danieleschmidt
+CHANGELOG.md @danieleschmidt
+CONTRIBUTING.md @danieleschmidt
+
+# Security and compliance
+SECURITY.md @danieleschmidt
+/.github/project-metrics.json @danieleschmidt
+
+# Monitoring and observability
+/monitoring/ @danieleschmidt
+
+# Release and deployment
+/scripts/build.sh @danieleschmidt
+/.releaserc.json @danieleschmidt
+
+# Project governance
+PROJECT_CHARTER.md @danieleschmidt
+CODEOWNERS @danieleschmidt

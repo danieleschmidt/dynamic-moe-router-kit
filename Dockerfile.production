@@ -1,0 +1,63 @@
+# Multi-stage production Dockerfile
+# Optimized for size and security
+
+# Build stage
+FROM python:3.10-slim as builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /build
+
+# Copy project files
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
+
+# Build wheel
+RUN pip install --no-cache-dir build && \
+    python -m build --wheel --outdir dist/
+
+# Runtime stage
+FROM python:3.10-slim as runtime
+
+# Install minimal runtime dependencies
+RUN apt-get update && apt-get install -y \
+    # Add only essential runtime dependencies here
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash --uid 1000 moe
+
+# Set working directory
+WORKDIR /app
+
+# Copy built wheel from builder stage
+COPY --from=builder /build/dist/*.whl ./
+
+# Install the wheel with minimal dependencies
+RUN pip install --no-cache-dir *.whl && \
+    rm -f *.whl && \
+    pip cache purge
+
+# Set ownership
+RUN chown -R moe:moe /app
+
+# Switch to non-root user
+USER moe
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import dynamic_moe_router; print('Health check passed')" || exit 1
+
+# Default command
+CMD ["python", "-c", "import dynamic_moe_router; print('Dynamic MoE Router ready')"]
