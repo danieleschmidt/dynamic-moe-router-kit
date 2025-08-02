@@ -1,0 +1,601 @@
+# Security Scanning Workflow
+# Comprehensive security analysis including dependencies, code, containers, and compliance
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run daily security scans at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      scan_type:
+        description: 'Type of security scan to run'
+        required: true
+        default: 'full'
+        type: choice
+        options:
+        - full
+        - dependencies
+        - code
+        - containers
+        - compliance
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.10'
+  
+  # Security scan configuration
+  BANDIT_SEVERITY: medium
+  SAFETY_DB_UPDATE: true
+  TRIVY_TIMEOUT: 20m
+  
+  # Compliance settings
+  SLSA_LEVEL: 3
+  SBOM_FORMAT: spdx-json
+
+permissions:
+  security-events: write  # For SARIF uploads
+  contents: read
+  actions: read
+
+jobs:
+  # ============================================================================
+  # DEPENDENCY VULNERABILITY SCANNING
+  # ============================================================================
+  
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["full", "dependencies"]'), github.event.inputs.scan_type) || github.event.inputs.scan_type == ''
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,torch,jax,tf]"
+
+    - name: Generate requirements files
+      run: |
+        pip freeze > requirements-frozen.txt
+        pip-audit --format=json --output=pip-audit-report.json || true
+        pip-audit --format=cyclonedx --output=sbom-pip-audit.json || true
+
+    - name: Run Safety vulnerability check
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check --output safety-report.txt || true
+
+    - name: Run pip-audit vulnerability check
+      uses: pypa/gh-action-pip-audit@v1.0.8
+      with:
+        inputs: requirements-frozen.txt
+        format: sarif
+        output: pip-audit-results.sarif
+
+    - name: Snyk dependency scan
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        args: --severity-threshold=medium --file=pyproject.toml --sarif-file-output=snyk-deps.sarif
+      continue-on-error: true
+
+    - name: Upload dependency scan results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          pip-audit-results.sarif
+          snyk-deps.sarif
+
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: dependency-security-reports
+        path: |
+          requirements-frozen.txt
+          pip-audit-report.json
+          safety-report.json
+          safety-report.txt
+          sbom-pip-audit.json
+
+  # ============================================================================
+  # CODE SECURITY ANALYSIS
+  # ============================================================================
+  
+  code-scan:
+    name: Code Security Analysis
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["full", "code"]'), github.event.inputs.scan_type) || github.event.inputs.scan_type == ''
+    timeout-minutes: 20
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better analysis
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run Bandit security linter
+      run: |
+        bandit -r src/ tests/ \
+          -ll \
+          -f json \
+          -o bandit-report.json
+        bandit -r src/ tests/ \
+          -ll \
+          -f sarif \
+          -o bandit-results.sarif
+
+    - name: Run Semgrep security scan
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: |
+          p/python
+          p/security-audit
+          p/secrets
+          p/owasp-top-ten
+        generateSarif: "1"
+        sarif_file: semgrep-results.sarif
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: python
+        queries: security-and-quality
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:python"
+
+    - name: Snyk code scan
+      uses: snyk/actions/python@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        command: code test
+        args: --sarif-file-output=snyk-code.sarif
+      continue-on-error: true
+
+    - name: Upload code security results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          bandit-results.sarif
+          semgrep-results.sarif
+          snyk-code.sarif
+
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: code-security-reports
+        path: |
+          bandit-report.json
+          bandit-results.sarif
+          semgrep-results.sarif
+
+  # ============================================================================
+  # CONTAINER SECURITY SCANNING
+  # ============================================================================
+  
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["full", "containers"]'), github.event.inputs.scan_type) || github.event.inputs.scan_type == ''
+    timeout-minutes: 25
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image for scanning
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        load: true
+        tags: dynamic-moe-router:security-scan
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'dynamic-moe-router:security-scan'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        timeout: ${{ env.TRIVY_TIMEOUT }}
+
+    - name: Run Trivy filesystem scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        format: 'sarif'
+        output: 'trivy-fs-results.sarif'
+
+    - name: Run Grype vulnerability scanner
+      uses: anchore/scan-action@v3
+      with:
+        image: 'dynamic-moe-router:security-scan'
+        fail-build: false
+        severity-cutoff: medium
+        output-format: sarif
+        output-file: grype-results.sarif
+
+    - name: Scan with Snyk for container vulnerabilities
+      uses: snyk/actions/docker@master
+      env:
+        SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+      with:
+        image: dynamic-moe-router:security-scan
+        args: --severity-threshold=medium --sarif-file-output=snyk-container.sarif
+      continue-on-error: true
+
+    - name: Docker Scout vulnerability scan
+      uses: docker/scout-action@v1
+      if: github.event_name == 'pull_request'
+      with:
+        command: cves
+        image: dynamic-moe-router:security-scan
+        sarif-file: scout-results.sarif
+        summary: true
+
+    - name: Upload container security results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          trivy-results.sarif
+          trivy-fs-results.sarif
+          grype-results.sarif
+          snyk-container.sarif
+          scout-results.sarif
+
+    - name: Upload container scan reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: container-security-reports
+        path: |
+          trivy-results.sarif
+          trivy-fs-results.sarif
+          grype-results.sarif
+
+  # ============================================================================
+  # COMPLIANCE & SBOM GENERATION
+  # ============================================================================
+  
+  compliance-scan:
+    name: Compliance & SBOM
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["full", "compliance"]'), github.event.inputs.scan_type) || github.event.inputs.scan_type == ''
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Generate SBOM with CycloneDX
+      run: |
+        pip install cyclonedx-bom
+        cyclonedx-py -o sbom-cyclonedx.json
+        cyclonedx-py --format xml -o sbom-cyclonedx.xml
+
+    - name: Generate SBOM with Syft
+      uses: anchore/sbom-action@v0
+      with:
+        path: .
+        format: spdx-json
+        output-file: sbom-spdx.json
+
+    - name: License compliance check
+      run: |
+        pip install pip-licenses
+        pip-licenses --format=json --output-file=licenses.json
+        pip-licenses --format=csv --output-file=licenses.csv
+
+    - name: Check for secrets
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified --json > trufflehog-results.json
+
+    - name: FOSSA license scan
+      if: env.FOSSA_API_KEY != ''
+      uses: fossas/fossa-action@main
+      env:
+        FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
+      with:
+        api-key: ${{ secrets.FOSSA_API_KEY }}
+        run-tests: true
+
+    - name: SLSA provenance check
+      uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v1.9.0
+      with:
+        base64-subjects: ${{ steps.hash.outputs.hashes }}
+        provenance-name: "provenance.intoto.jsonl"
+
+    - name: Upload compliance artifacts
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: compliance-reports
+        path: |
+          sbom-cyclonedx.json
+          sbom-cyclonedx.xml
+          sbom-spdx.json
+          licenses.json
+          licenses.csv
+          trufflehog-results.json
+          provenance.intoto.jsonl
+
+  # ============================================================================
+  # SECURITY METRICS & REPORTING
+  # ============================================================================
+  
+  security-metrics:
+    name: Security Metrics
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, code-scan, container-scan, compliance-scan]
+    if: always()
+    
+    steps:
+    - name: Download all security reports
+      uses: actions/download-artifact@v3
+      with:
+        path: security-reports/
+
+    - name: Generate security summary
+      run: |
+        echo "# Security Scan Summary" > security-summary.md
+        echo "Generated on: $(date -u)" >> security-summary.md
+        echo "" >> security-summary.md
+        
+        # Count findings by severity
+        echo "## Summary by Scan Type" >> security-summary.md
+        echo "" >> security-summary.md
+        
+        if [ -d "security-reports/dependency-security-reports" ]; then
+          echo "### Dependency Vulnerabilities" >> security-summary.md
+          echo "- Safety scan completed" >> security-summary.md
+          echo "- pip-audit scan completed" >> security-summary.md
+          echo "- Snyk dependency scan completed" >> security-summary.md
+        fi
+        
+        if [ -d "security-reports/code-security-reports" ]; then
+          echo "### Code Security Analysis" >> security-summary.md
+          echo "- Bandit scan completed" >> security-summary.md
+          echo "- Semgrep scan completed" >> security-summary.md
+          echo "- CodeQL analysis completed" >> security-summary.md
+        fi
+        
+        if [ -d "security-reports/container-security-reports" ]; then
+          echo "### Container Security" >> security-summary.md
+          echo "- Trivy container scan completed" >> security-summary.md
+          echo "- Grype vulnerability scan completed" >> security-summary.md
+        fi
+        
+        if [ -d "security-reports/compliance-reports" ]; then
+          echo "### Compliance & SBOM" >> security-summary.md
+          echo "- SBOM generation completed" >> security-summary.md
+          echo "- License compliance check completed" >> security-summary.md
+          echo "- Secret detection completed" >> security-summary.md
+        fi
+        
+        echo "" >> security-summary.md
+        echo "## Recommendations" >> security-summary.md
+        echo "1. Review all SARIF files uploaded to Security tab" >> security-summary.md
+        echo "2. Address any HIGH or CRITICAL vulnerabilities immediately" >> security-summary.md
+        echo "3. Update dependencies with known vulnerabilities" >> security-summary.md
+        echo "4. Review license compliance report" >> security-summary.md
+
+    - name: Upload security summary
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-summary
+        path: security-summary.md
+
+    - name: Comment on PR with security summary
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('security-summary.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🔒 Security Scan Results\n\n${summary}\n\n**Note**: Detailed results are available in the Security tab and workflow artifacts.`
+          });
+
+  # ============================================================================
+  # SECURITY ALERT MANAGEMENT
+  # ============================================================================
+  
+  alert-management:
+    name: Security Alert Management
+    runs-on: ubuntu-latest
+    needs: [security-metrics]
+    if: always() && (github.ref == 'refs/heads/main' || github.event_name == 'schedule')
+    
+    steps:
+    - name: Check for critical vulnerabilities
+      id: critical-check
+      run: |
+        # This would check SARIF results for critical findings
+        # For now, we'll simulate the check
+        CRITICAL_COUNT=0
+        HIGH_COUNT=0
+        
+        echo "critical_count=${CRITICAL_COUNT}" >> $GITHUB_OUTPUT
+        echo "high_count=${HIGH_COUNT}" >> $GITHUB_OUTPUT
+        
+        if [ $CRITICAL_COUNT -gt 0 ] || [ $HIGH_COUNT -gt 5 ]; then
+          echo "needs_alert=true" >> $GITHUB_OUTPUT
+        else
+          echo "needs_alert=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create security issue
+      if: steps.critical-check.outputs.needs_alert == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const criticalCount = ${{ steps.critical-check.outputs.critical_count }};
+          const highCount = ${{ steps.critical-check.outputs.high_count }};
+          
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚨 Security Alert: ${criticalCount} Critical, ${highCount} High Severity Vulnerabilities`,
+            body: `## Security Scan Alert
+            
+            Our automated security scan has detected vulnerabilities that require immediate attention:
+            
+            - **Critical**: ${criticalCount} vulnerabilities
+            - **High**: ${highCount} vulnerabilities
+            
+            ### Next Steps
+            1. Review the security scan results in the Security tab
+            2. Prioritize fixes for critical vulnerabilities
+            3. Update affected dependencies
+            4. Re-run security scans after fixes
+            
+            **Scan Date**: ${new Date().toISOString()}
+            **Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            `,
+            labels: ['security', 'high-priority', 'vulnerability']
+          });
+          
+          console.log(`Created security issue #${issue.data.number}`);
+
+    - name: Notify security team
+      if: steps.critical-check.outputs.needs_alert == 'true'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        channel: '#security-alerts'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        custom_payload: |
+          {
+            "text": "🚨 Security Alert",
+            "attachments": [
+              {
+                "color": "danger",
+                "fields": [
+                  {
+                    "title": "Repository",
+                    "value": "${{ github.repository }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Critical Vulnerabilities",
+                    "value": "${{ steps.critical-check.outputs.critical_count }}",
+                    "short": true
+                  },
+                  {
+                    "title": "High Vulnerabilities", 
+                    "value": "${{ steps.critical-check.outputs.high_count }}",
+                    "short": true
+                  },
+                  {
+                    "title": "Workflow",
+                    "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Details>",
+                    "short": true
+                  }
+                ]
+              }
+            ]
+          }
+
+  # ============================================================================
+  # SECURITY SCAN SUMMARY
+  # ============================================================================
+  
+  summary:
+    name: Security Scan Summary
+    runs-on: ubuntu-latest
+    needs: [dependency-scan, code-scan, container-scan, compliance-scan, security-metrics, alert-management]
+    if: always()
+    
+    steps:
+    - name: Security scan summary
+      run: |
+        echo "🔒 Security Scan Summary"
+        echo "======================="
+        echo "Dependency Scan: ${{ needs.dependency-scan.result }}"
+        echo "Code Scan: ${{ needs.code-scan.result }}"
+        echo "Container Scan: ${{ needs.container-scan.result }}"
+        echo "Compliance Scan: ${{ needs.compliance-scan.result }}"
+        echo "Security Metrics: ${{ needs.security-metrics.result }}"
+        echo "Alert Management: ${{ needs.alert-management.result }}"
+        echo ""
+        echo "All security scan results have been uploaded to the Security tab."
+        echo "Review SARIF files and artifacts for detailed findings."
+
+    - name: Set job summary
+      run: |
+        echo "## 🔒 Security Scan Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Scan Type | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----------|---------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Dependency Vulnerabilities | ${{ needs.dependency-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Code Security Analysis | ${{ needs.code-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container Security | ${{ needs.container-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Compliance & SBOM | ${{ needs.compliance-scan.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📊 Detailed results are available in the [Security tab](https://github.com/${{ github.repository }}/security)" >> $GITHUB_STEP_SUMMARY

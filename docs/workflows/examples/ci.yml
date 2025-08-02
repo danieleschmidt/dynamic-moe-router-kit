@@ -1,0 +1,428 @@
+# Continuous Integration Workflow
+# This workflow runs tests, linting, and security checks on every push and PR
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run daily at 6 AM UTC to catch dependency issues
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Python configuration
+  PYTHON_VERSION_MIN: '3.8'
+  PYTHON_VERSION_MAX: '3.11'
+  
+  # Testing configuration  
+  PYTEST_TIMEOUT: 300
+  COVERAGE_THRESHOLD: 80
+  
+  # Performance testing
+  BENCHMARK_THRESHOLD: 1.2  # Allow 20% performance regression
+  
+  # Security scanning
+  BANDIT_SEVERITY: medium
+  SAFETY_CHECK: true
+
+jobs:
+  # ============================================================================
+  # CODE QUALITY & LINTING
+  # ============================================================================
+  
+  lint:
+    name: Code Quality & Linting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for better diff analysis
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION_MAX }}
+        cache: 'pip'
+        cache-dependency-path: 'pyproject.toml'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Cache pre-commit
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pre-commit
+        key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pre-commit-
+
+    - name: Run pre-commit hooks
+      run: pre-commit run --all-files --show-diff-on-failure
+
+    - name: Check code formatting with Black
+      run: black --check --diff src/ tests/
+
+    - name: Check import sorting with isort
+      run: isort --check-only --diff src/ tests/
+
+    - name: Lint with Ruff
+      run: |
+        ruff check src/ tests/ --output-format=github
+        ruff check src/ tests/ --output-format=json --output-file=ruff-report.json
+
+    - name: Type check with MyPy
+      run: |
+        mypy src/dynamic_moe_router --config-file=pyproject.toml
+        mypy src/dynamic_moe_router --config-file=pyproject.toml --cobertura-xml-report=mypy-coverage.xml
+
+    - name: Check docstring coverage
+      run: |
+        interrogate src/dynamic_moe_router --ignore-init-method --ignore-magic \
+          --ignore-private --ignore-property-decorators --fail-under=80 \
+          --generate-badge=docs/
+
+    - name: Upload lint reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: lint-reports
+        path: |
+          ruff-report.json
+          mypy-coverage.xml
+          docs/interrogate_badge.svg
+
+  # ============================================================================
+  # SECURITY SCANNING
+  # ============================================================================
+  
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write  # For SARIF upload
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION_MAX }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+
+    - name: Run Bandit security scan
+      run: |
+        bandit -r src/ -ll -f json -o bandit-report.json
+        bandit -r src/ -ll -f sarif -o bandit-results.sarif
+
+    - name: Run Safety dependency check
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check --output safety-report.txt || true
+
+    - name: Run Semgrep security scan
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: auto
+        generateSarif: "1"
+
+    - name: Upload SARIF results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: |
+          bandit-results.sarif
+          semgrep.sarif
+
+    - name: Upload security reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+          safety-report.txt
+
+  # ============================================================================
+  # UNIT TESTS
+  # ============================================================================
+  
+  test:
+    name: Tests (Python ${{ matrix.python-version }}, ${{ matrix.backend }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+        backend: ['torch', 'jax', 'tf']
+        include:
+          # Test on multiple OS for core functionality
+          - os: windows-latest
+            python-version: '3.10'
+            backend: 'torch'
+          - os: macos-latest
+            python-version: '3.10'  
+            backend: 'torch'
+        exclude:
+          # JAX has limited Windows support
+          - os: windows-latest
+            backend: 'jax'
+          # Skip older Python with newer backends for CI speed
+          - python-version: '3.8'
+            backend: 'jax'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+        cache-dependency-path: 'pyproject.toml'
+
+    - name: Install system dependencies (Ubuntu)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,${{ matrix.backend }}]"
+
+    - name: List installed packages
+      run: pip list
+
+    - name: Run unit tests
+      run: |
+        pytest tests/unit/ \
+          -v \
+          --cov=dynamic_moe_router \
+          --cov-report=xml \
+          --cov-report=term-missing \
+          --cov-report=html \
+          --cov-fail-under=${{ env.COVERAGE_THRESHOLD }} \
+          --timeout=${{ env.PYTEST_TIMEOUT }} \
+          --tb=short \
+          -m "not slow and ${{ matrix.backend }}" \
+          --junitxml=test-results-${{ matrix.python-version }}-${{ matrix.backend }}.xml
+
+    - name: Run integration tests
+      if: matrix.backend == 'torch' && matrix.python-version == '3.10'
+      run: |
+        pytest tests/integration/ \
+          -v \
+          --timeout=${{ env.PYTEST_TIMEOUT }} \
+          --tb=short \
+          -m "${{ matrix.backend }}"
+
+    - name: Upload coverage to Codecov
+      if: matrix.python-version == '3.10' && matrix.backend == 'torch'
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-results-${{ matrix.python-version }}-${{ matrix.backend }}
+        path: |
+          test-results-*.xml
+          htmlcov/
+          coverage.xml
+
+  # ============================================================================
+  # PERFORMANCE TESTS
+  # ============================================================================
+  
+  performance:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION_MAX }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,torch]"
+
+    - name: Run performance benchmarks
+      run: |
+        pytest tests/performance/ \
+          -v \
+          --benchmark-only \
+          --benchmark-json=benchmark-results.json \
+          --benchmark-compare-fail=max:${{ env.BENCHMARK_THRESHOLD }}
+
+    - name: Upload benchmark results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark-results.json
+
+  # ============================================================================
+  # BUILD & PACKAGE VALIDATION
+  # ============================================================================
+  
+  build:
+    name: Build & Package Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [lint, security]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION_MAX }}
+        cache: 'pip'
+
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build twine
+
+    - name: Build package
+      run: python -m build
+
+    - name: Validate package
+      run: |
+        twine check dist/*
+        pip install dist/*.whl
+        python -c "import dynamic_moe_router; print('Package import successful')"
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: dist/
+
+  # ============================================================================
+  # DOCKER BUILD VALIDATION
+  # ============================================================================
+  
+  docker:
+    name: Docker Build Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: dynamic-moe-router:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Test Docker image
+      run: |
+        docker run --rm dynamic-moe-router:test python -c "import dynamic_moe_router; print('Docker image working')"
+
+    - name: Run container security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'dynamic-moe-router:test'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results
+      if: always()
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # ============================================================================
+  # SUMMARY & NOTIFICATIONS
+  # ============================================================================
+  
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [lint, security, test, performance, build, docker]
+    if: always()
+    
+    steps:
+    - name: Check job statuses
+      run: |
+        echo "Lint: ${{ needs.lint.result }}"
+        echo "Security: ${{ needs.security.result }}"
+        echo "Test: ${{ needs.test.result }}"
+        echo "Performance: ${{ needs.performance.result }}"
+        echo "Build: ${{ needs.build.result }}"
+        echo "Docker: ${{ needs.docker.result }}"
+
+    - name: Report failure
+      if: contains(needs.*.result, 'failure')
+      run: |
+        echo "::error::One or more CI jobs failed"
+        exit 1
+
+    - name: Notify on failure
+      if: failure() && github.event_name != 'pull_request'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        channel: '#ci-alerts'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+        text: |
+          CI failed for ${{ github.repository }}
+          Commit: ${{ github.sha }}
+          Branch: ${{ github.ref }}
+          Author: ${{ github.actor }}
+
+    - name: CI Success
+      if: success()
+      run: echo "::notice::All CI checks passed successfully"
