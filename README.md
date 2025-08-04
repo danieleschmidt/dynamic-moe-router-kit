@@ -262,7 +262,7 @@ make docs
 ```bibtex
 @article{dynamic_moe_routing,
   title={Dynamic Expert Selection for Efficient Mixture-of-Experts},
-  author={Your Name},
+  author={Daniel Schmidt},
   journal={arXiv preprint arXiv:2403.XXXXX},
   year={2024}
 }
