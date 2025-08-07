@@ -19,19 +19,29 @@ from .moe import MoELayer, SparseMoELayer, LayerNormMoE
 from .profiler import FLOPProfiler, ComparisonProfiler
 
 # Framework-specific implementations (optional imports)
-# TODO: Fix PyTorch implementation syntax errors
-# try:
-#     from .torch import (
-#         TorchDynamicRouter,
-#         TorchMoELayer,
-#         TorchGradientNormEstimator,
-#         TorchAttentionEntropyEstimator,
-#         TorchPerplexityProxyEstimator,
-#         patch_model_with_dynamic_routing
-#     )
-#     TORCH_AVAILABLE = True
-# except ImportError:
-TORCH_AVAILABLE = False
+try:
+    import torch
+    _torch_available = True
+except ImportError:
+    _torch_available = False
+
+if _torch_available:
+    try:
+        from .torch import (
+            TorchDynamicRouter,
+            TorchMoELayer,
+            TorchGradientNormEstimator,
+            TorchAttentionEntropyEstimator,
+            TorchPerplexityProxyEstimator,
+            patch_model_with_dynamic_routing
+        )
+        TORCH_AVAILABLE = True
+    except ImportError as e:
+        TORCH_AVAILABLE = False
+        import warnings
+        warnings.warn(f"PyTorch detected but torch backend failed to load: {e}")
+else:
+    TORCH_AVAILABLE = False
 
 __all__ = [
     "__version__",

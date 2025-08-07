@@ -15,7 +15,14 @@ from ..router import DynamicRouter
 from ..estimator import ComplexityEstimator
 
 
-class TorchDynamicRouter(DynamicRouter, nn.Module):
+if not TORCH_AVAILABLE:
+    # Create dummy base classes when PyTorch is not available
+    class _DummyModule:
+        pass
+    nn = type('nn', (), {'Module': _DummyModule})()
+
+
+class TorchDynamicRouter(DynamicRouter, nn.Module if TORCH_AVAILABLE else object):
     """PyTorch implementation of dynamic MoE router."""
     
     def __init__(self, **kwargs):
@@ -139,4 +146,208 @@ class TorchDynamicRouter(DynamicRouter, nn.Module):
             dtype=router_logits.dtype, device=device
         )
         
-        if self.routing_strategy == \"top_k\":\n            return self._top_k_selection_torch(\n                router_logits, num_experts_per_token, expert_indices, expert_weights\n            )\n        elif self.routing_strategy == \"threshold\":\n            return self._threshold_selection_torch(\n                router_logits, num_experts_per_token, expert_indices, expert_weights\n            )\n        else:\n            raise ValueError(f\"Unknown routing strategy: {self.routing_strategy}\")\n    \n    def _top_k_selection_torch(\n        self,\n        router_logits: torch.Tensor,\n        num_experts_per_token: torch.Tensor,\n        expert_indices: torch.Tensor,\n        expert_weights: torch.Tensor\n    ) -> tuple:\n        \"\"\"Vectorized top-k selection for PyTorch.\"\"\"\n        batch_size, seq_len, num_experts = router_logits.shape\n        max_k = self.max_experts\n        \n        # For efficiency, we'll handle the most common case (same k for all tokens)\n        # and fall back to loop for variable k\n        unique_ks = torch.unique(num_experts_per_token)\n        \n        if len(unique_ks) == 1:\n            # All tokens use same number of experts - can vectorize\n            k = int(unique_ks.item())\n            if k > 0:\n                # Get top-k indices and values\n                top_logits, top_indices = torch.topk(router_logits, k, dim=-1)\n                \n                # Compute softmax weights\n                weights = F.softmax(top_logits, dim=-1)\n                \n                # Store results\n                expert_indices[:, :, :k] = top_indices\n                expert_weights[:, :, :k] = weights\n        else:\n            # Variable k - need to handle token by token\n            for b in range(batch_size):\n                for s in range(seq_len):\n                    k = int(num_experts_per_token[b, s].item())\n                    if k > 0:\n                        token_logits = router_logits[b, s]\n                        top_logits, top_indices = torch.topk(token_logits, k)\n                        weights = F.softmax(top_logits, dim=0)\n                        \n                        expert_indices[b, s, :k] = top_indices\n                        expert_weights[b, s, :k] = weights\n        \n        return expert_indices, expert_weights\n    \n    def _threshold_selection_torch(\n        self,\n        router_logits: torch.Tensor,\n        num_experts_per_token: torch.Tensor,\n        expert_indices: torch.Tensor,\n        expert_weights: torch.Tensor\n    ) -> tuple:\n        \"\"\"Threshold-based selection for PyTorch.\"\"\"\n        batch_size, seq_len, num_experts = router_logits.shape\n        \n        # This is more complex to vectorize, so we use a loop\n        for b in range(batch_size):\n            for s in range(seq_len):\n                k = int(num_experts_per_token[b, s].item())\n                token_logits = router_logits[b, s]\n                \n                if k > 0:\n                    # Set threshold to select approximately k experts\n                    if k >= num_experts:\n                        threshold = float('-inf')\n                    else:\n                        sorted_logits, _ = torch.sort(token_logits, descending=True)\n                        threshold = sorted_logits[k-1].item()\n                    \n                    # Select experts above threshold\n                    selected_mask = token_logits >= threshold\n                    selected_indices = torch.where(selected_mask)[0]\n                    \n                    # Limit to max_k experts\n                    if len(selected_indices) > self.max_experts:\n                        # Take the highest scoring ones\n                        selected_logits = token_logits[selected_indices]\n                        _, top_idx = torch.topk(selected_logits, self.max_experts)\n                        selected_indices = selected_indices[top_idx]\n                    \n                    # Compute weights\n                    if len(selected_indices) > 0:\n                        selected_logits = token_logits[selected_indices]\n                        weights = F.softmax(selected_logits, dim=0)\n                        \n                        # Store results\n                        num_selected = len(selected_indices)\n                        expert_indices[b, s, :num_selected] = selected_indices\n                        expert_weights[b, s, :num_selected] = weights\n        \n        return expert_indices, expert_weights\n    \n    def _apply_load_balancing_torch(\n        self,\n        expert_indices: torch.Tensor,\n        expert_weights: torch.Tensor,\n        router_logits: torch.Tensor\n    ) -> torch.Tensor:\n        \"\"\"Apply load balancing using PyTorch operations.\"\"\"\n        # Convert to numpy for compatibility with base class logic\n        expert_indices_np = expert_indices.detach().cpu().numpy()\n        expert_weights_np = expert_weights.detach().cpu().numpy()\n        router_logits_np = router_logits.detach().cpu().numpy()\n        \n        # Apply base class load balancing\n        balanced_weights_np = super()._apply_load_balancing(\n            expert_indices_np, expert_weights_np, router_logits_np\n        )\n        \n        # Convert back to PyTorch\n        return torch.from_numpy(balanced_weights_np).to(expert_weights.device)\n    \n    def _compute_routing_stats_torch(\n        self,\n        expert_indices: torch.Tensor,\n        num_experts_per_token: torch.Tensor,\n        complexity_scores: torch.Tensor\n    ) -> Dict[str, Any]:\n        \"\"\"Compute routing statistics for PyTorch tensors.\"\"\"\n        batch_size, seq_len = complexity_scores.shape\n        total_tokens = batch_size * seq_len\n        \n        # Average experts per token\n        avg_experts = float(torch.mean(num_experts_per_token.float()).item())\n        \n        # Expert utilization distribution\n        valid_indices = expert_indices[expert_indices >= 0]\n        expert_counts = torch.bincount(valid_indices, minlength=self.num_experts)\n        total_expert_calls = torch.sum(expert_counts).item()\n        expert_utilization = (expert_counts.float() / total_expert_calls).tolist() if total_expert_calls > 0 else [0.0] * self.num_experts\n        \n        # FLOP reduction estimate\n        static_flops = total_tokens * self.num_experts\n        dynamic_flops = torch.sum(num_experts_per_token).item()\n        flop_reduction = 1.0 - (dynamic_flops / static_flops) if static_flops > 0 else 0.0\n        \n        return {\n            'avg_experts_per_token': avg_experts,\n            'total_expert_calls': int(dynamic_flops),\n            'flop_reduction': flop_reduction,\n            'expert_utilization': expert_utilization,\n            'complexity_stats': {\n                'mean': float(torch.mean(complexity_scores).item()),\n                'std': float(torch.std(complexity_scores).item()),\n                'min': float(torch.min(complexity_scores).item()),\n                'max': float(torch.max(complexity_scores).item())\n            }\n        }\n\n\nclass TorchAdaptiveRouter(TorchDynamicRouter):\n    \"\"\"PyTorch implementation of adaptive router.\"\"\"\n    \n    def __init__(self, adaptation_rate: float = 0.01, **kwargs):\n        super().__init__(**kwargs)\n        self.adaptation_rate = adaptation_rate\n        \n        # Store thresholds as learnable parameters\n        initial_thresholds = torch.linspace(0.0, 1.0, self.max_experts + 1)\n        self.register_parameter(\n            'complexity_thresholds', \n            nn.Parameter(initial_thresholds)\n        )\n        self.performance_history = []\n    \n    def update_thresholds(self, performance_score: float):\n        \"\"\"Update complexity thresholds based on performance feedback.\"\"\"\n        self.performance_history.append(performance_score)\n        \n        if len(self.performance_history) > 1:\n            # Simple gradient-based update\n            perf_gradient = performance_score - self.performance_history[-2]\n            \n            with torch.no_grad():\n                # Adjust thresholds to encourage better performance\n                if perf_gradient > 0:\n                    # Performance improved\n                    self.complexity_thresholds[1:-1] *= (1 + self.adaptation_rate)\n                else:\n                    # Performance degraded\n                    self.complexity_thresholds[1:-1] *= (1 - self.adaptation_rate)\n                \n                # Keep thresholds sorted and bounded\n                self.complexity_thresholds.clamp_(0.0, 1.0)\n                self.complexity_thresholds.data = torch.sort(self.complexity_thresholds)[0]\n    \n    def _compute_expert_counts_torch(self, complexity_scores: torch.Tensor) -> torch.Tensor:\n        \"\"\"Compute expert counts using adaptive thresholds.\"\"\"\n        expert_counts = torch.ones_like(complexity_scores, dtype=torch.long) * self.min_experts\n        \n        for i in range(self.min_experts, self.max_experts):\n            threshold = self.complexity_thresholds[i]\n            mask = complexity_scores >= threshold\n            expert_counts[mask] = i + 1\n        \n        return expert_counts"
+        if self.routing_strategy == "top_k":
+            return self._top_k_selection_torch(
+                router_logits, num_experts_per_token, expert_indices, expert_weights
+            )
+        elif self.routing_strategy == "threshold":
+            return self._threshold_selection_torch(
+                router_logits, num_experts_per_token, expert_indices, expert_weights
+            )
+        else:
+            raise ValueError(f"Unknown routing strategy: {self.routing_strategy}")
+    
+    def _top_k_selection_torch(
+        self,
+        router_logits: torch.Tensor,
+        num_experts_per_token: torch.Tensor,
+        expert_indices: torch.Tensor,
+        expert_weights: torch.Tensor
+    ) -> tuple:
+        """Vectorized top-k selection for PyTorch."""
+        batch_size, seq_len, num_experts = router_logits.shape
+        max_k = self.max_experts
+        
+        # For efficiency, we'll handle the most common case (same k for all tokens)
+        # and fall back to loop for variable k
+        unique_ks = torch.unique(num_experts_per_token)
+        
+        if len(unique_ks) == 1:
+            # All tokens use same number of experts - can vectorize
+            k = int(unique_ks.item())
+            if k > 0:
+                # Get top-k indices and values
+                top_logits, top_indices = torch.topk(router_logits, k, dim=-1)
+                
+                # Compute softmax weights
+                weights = F.softmax(top_logits, dim=-1)
+                
+                # Store results
+                expert_indices[:, :, :k] = top_indices
+                expert_weights[:, :, :k] = weights
+        else:
+            # Variable k - need to handle token by token
+            for b in range(batch_size):
+                for s in range(seq_len):
+                    k = int(num_experts_per_token[b, s].item())
+                    if k > 0:
+                        token_logits = router_logits[b, s]
+                        top_logits, top_indices = torch.topk(token_logits, k)
+                        weights = F.softmax(top_logits, dim=0)
+                        
+                        expert_indices[b, s, :k] = top_indices
+                        expert_weights[b, s, :k] = weights
+        
+        return expert_indices, expert_weights
+    
+    def _threshold_selection_torch(
+        self,
+        router_logits: torch.Tensor,
+        num_experts_per_token: torch.Tensor,
+        expert_indices: torch.Tensor,
+        expert_weights: torch.Tensor
+    ) -> tuple:
+        """Threshold-based selection for PyTorch."""
+        batch_size, seq_len, num_experts = router_logits.shape
+        
+        # This is more complex to vectorize, so we use a loop
+        for b in range(batch_size):
+            for s in range(seq_len):
+                k = int(num_experts_per_token[b, s].item())
+                token_logits = router_logits[b, s]
+                
+                if k > 0:
+                    # Set threshold to select approximately k experts
+                    if k >= num_experts:
+                        threshold = float('-inf')
+                    else:
+                        sorted_logits, _ = torch.sort(token_logits, descending=True)
+                        threshold = sorted_logits[k-1].item()
+                    
+                    # Select experts above threshold
+                    selected_mask = token_logits >= threshold
+                    selected_indices = torch.where(selected_mask)[0]
+                    
+                    # Limit to max_k experts
+                    if len(selected_indices) > self.max_experts:
+                        # Take the highest scoring ones
+                        selected_logits = token_logits[selected_indices]
+                        _, top_idx = torch.topk(selected_logits, self.max_experts)
+                        selected_indices = selected_indices[top_idx]
+                    
+                    # Compute weights
+                    if len(selected_indices) > 0:
+                        selected_logits = token_logits[selected_indices]
+                        weights = F.softmax(selected_logits, dim=0)
+                        
+                        # Store results
+                        num_selected = len(selected_indices)
+                        expert_indices[b, s, :num_selected] = selected_indices
+                        expert_weights[b, s, :num_selected] = weights
+        
+        return expert_indices, expert_weights
+    
+    def _apply_load_balancing_torch(
+        self,
+        expert_indices: torch.Tensor,
+        expert_weights: torch.Tensor,
+        router_logits: torch.Tensor
+    ) -> torch.Tensor:
+        """Apply load balancing using PyTorch operations."""
+        # Convert to numpy for compatibility with base class logic
+        expert_indices_np = expert_indices.detach().cpu().numpy()
+        expert_weights_np = expert_weights.detach().cpu().numpy()
+        router_logits_np = router_logits.detach().cpu().numpy()
+        
+        # Apply base class load balancing
+        balanced_weights_np = super()._apply_load_balancing(
+            expert_indices_np, expert_weights_np, router_logits_np
+        )
+        
+        # Convert back to PyTorch
+        return torch.from_numpy(balanced_weights_np).to(expert_weights.device)
+    
+    def _compute_routing_stats_torch(
+        self,
+        expert_indices: torch.Tensor,
+        num_experts_per_token: torch.Tensor,
+        complexity_scores: torch.Tensor
+    ) -> Dict[str, Any]:
+        """Compute routing statistics for PyTorch tensors."""
+        batch_size, seq_len = complexity_scores.shape
+        total_tokens = batch_size * seq_len
+        
+        # Average experts per token
+        avg_experts = float(torch.mean(num_experts_per_token.float()).item())
+        
+        # Expert utilization distribution
+        valid_indices = expert_indices[expert_indices >= 0]
+        expert_counts = torch.bincount(valid_indices, minlength=self.num_experts)
+        total_expert_calls = torch.sum(expert_counts).item()
+        expert_utilization = (expert_counts.float() / total_expert_calls).tolist() if total_expert_calls > 0 else [0.0] * self.num_experts
+        
+        # FLOP reduction estimate
+        static_flops = total_tokens * self.num_experts
+        dynamic_flops = torch.sum(num_experts_per_token).item()
+        flop_reduction = 1.0 - (dynamic_flops / static_flops) if static_flops > 0 else 0.0
+        
+        return {
+            'avg_experts_per_token': avg_experts,
+            'total_expert_calls': int(dynamic_flops),
+            'flop_reduction': flop_reduction,
+            'expert_utilization': expert_utilization,
+            'complexity_stats': {
+                'mean': float(torch.mean(complexity_scores).item()),
+                'std': float(torch.std(complexity_scores).item()),
+                'min': float(torch.min(complexity_scores).item()),
+                'max': float(torch.max(complexity_scores).item())
+            }
+        }
+
+
+class TorchAdaptiveRouter(TorchDynamicRouter):
+    """PyTorch implementation of adaptive router."""
+    
+    def __init__(self, adaptation_rate: float = 0.01, **kwargs):
+        super().__init__(**kwargs)
+        self.adaptation_rate = adaptation_rate
+        
+        # Store thresholds as learnable parameters
+        initial_thresholds = torch.linspace(0.0, 1.0, self.max_experts + 1)
+        self.register_parameter(
+            'complexity_thresholds', 
+            nn.Parameter(initial_thresholds)
+        )
+        self.performance_history = []
+    
+    def update_thresholds(self, performance_score: float):
+        """Update complexity thresholds based on performance feedback."""
+        self.performance_history.append(performance_score)
+        
+        if len(self.performance_history) > 1:
+            # Simple gradient-based update
+            perf_gradient = performance_score - self.performance_history[-2]
+            
+            with torch.no_grad():
+                # Adjust thresholds to encourage better performance
+                if perf_gradient > 0:
+                    # Performance improved
+                    self.complexity_thresholds[1:-1] *= (1 + self.adaptation_rate)
+                else:
+                    # Performance degraded
+                    self.complexity_thresholds[1:-1] *= (1 - self.adaptation_rate)
+                
+                # Keep thresholds sorted and bounded
+                self.complexity_thresholds.clamp_(0.0, 1.0)
+                self.complexity_thresholds.data = torch.sort(self.complexity_thresholds)[0]
+    
+    def _compute_expert_counts_torch(self, complexity_scores: torch.Tensor) -> torch.Tensor:
+        """Compute expert counts using adaptive thresholds."""
+        expert_counts = torch.ones_like(complexity_scores, dtype=torch.long) * self.min_experts
+        
+        for i in range(self.min_experts, self.max_experts):
+            threshold = self.complexity_thresholds[i]
+            mask = complexity_scores >= threshold
+            expert_counts[mask] = i + 1
+        
+        return expert_counts

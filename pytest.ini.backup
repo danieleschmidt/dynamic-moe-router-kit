@@ -5,7 +5,7 @@ python_files = test_*.py
 python_classes = Test*
 python_functions = test_*
 
-# Coverage reporting  
+# Coverage and execution options  
 addopts = 
     --verbose
     --cov=dynamic_moe_router
@@ -15,6 +15,7 @@ addopts =
     --cov-fail-under=80
     --strict-markers
     --strict-config
+    -n auto
 
 # Markers for test categorization
 markers =
@@ -54,9 +55,6 @@ filterwarnings =
 
 # Test timeout (prevents hanging tests)
 timeout = 300
-
-# Parallel execution  
-addopts = -n auto
 
 # Test output formatting
 console_output_style = progress
