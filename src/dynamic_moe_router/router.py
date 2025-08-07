@@ -1,11 +1,30 @@
 """Dynamic expert routing for Mixture-of-Experts models."""
 
+import logging
 import math
 from typing import Dict, Any, Optional, Tuple, Union, List
+import warnings
 
 import numpy as np
 
 from .estimator import ComplexityEstimator, get_estimator
+from .validation import (
+    validate_router_config, 
+    validate_tensor_shape,
+    validate_complexity_scores,
+    validate_expert_indices,
+    validate_expert_weights,
+    sanitize_routing_kwargs,
+    check_memory_usage
+)
+from .exceptions import (
+    RouterConfigurationError,
+    ComplexityEstimationError,
+    ExpertDispatchError,
+    LoadBalancingError
+)
+
+logger = logging.getLogger(__name__)
 
 
 class DynamicRouter:
@@ -27,6 +46,7 @@ class DynamicRouter:
         noise_factor: float = 0.0,
         **estimator_kwargs
     ):
+        # Store configuration
         self.input_dim = input_dim
         self.num_experts = num_experts
         self.min_experts = min_experts
@@ -35,17 +55,41 @@ class DynamicRouter:
         self.load_balancing = load_balancing
         self.noise_factor = noise_factor
         
-        # Validate parameters
-        if self.min_experts < 1 or self.min_experts > self.num_experts:
-            raise ValueError(f"min_experts must be in [1, {self.num_experts}]")
-        if self.max_experts < self.min_experts or self.max_experts > self.num_experts:
-            raise ValueError(f"max_experts must be in [{self.min_experts}, {self.num_experts}]")
+        # Validate configuration
+        try:
+            validate_router_config(
+                input_dim=self.input_dim,
+                num_experts=self.num_experts,
+                min_experts=self.min_experts,
+                max_experts=self.max_experts,
+                noise_factor=self.noise_factor,
+                **estimator_kwargs
+            )
+        except Exception as e:
+            raise RouterConfigurationError(f"Invalid router configuration: {e}")
         
-        # Initialize complexity estimator
-        if isinstance(complexity_estimator, str):
-            self.complexity_estimator = get_estimator(complexity_estimator, **estimator_kwargs)
-        else:
-            self.complexity_estimator = complexity_estimator
+        # Validate routing strategy
+        supported_strategies = ["top_k", "threshold"]
+        if self.routing_strategy not in supported_strategies:
+            raise RouterConfigurationError(
+                f"Unsupported routing strategy '{self.routing_strategy}'. "
+                f"Supported: {supported_strategies}"
+            )
+        
+        # Initialize complexity estimator with error handling
+        try:
+            if isinstance(complexity_estimator, str):
+                self.complexity_estimator = get_estimator(complexity_estimator, **estimator_kwargs)
+            else:
+                self.complexity_estimator = complexity_estimator
+        except Exception as e:
+            raise RouterConfigurationError(f"Failed to initialize complexity estimator: {e}")
+        
+        logger.info(
+            f"Initialized DynamicRouter: {self.num_experts} experts, "
+            f"{self.min_experts}-{self.max_experts} per token, "
+            f"strategy={self.routing_strategy}"
+        )
         
         # Router network parameters (to be initialized in subclasses)
         self.router_weights = None
@@ -69,7 +113,7 @@ class DynamicRouter:
         return_router_logits: bool = False,
         **complexity_kwargs
     ) -> Dict[str, Any]:
-        """Perform dynamic expert routing.
+        """Perform dynamic expert routing with comprehensive error handling.
         
         Args:
             hidden_states: Input tensor [batch, seq_len, hidden_dim]
@@ -84,34 +128,97 @@ class DynamicRouter:
             - complexity_scores: Token complexity scores [batch, seq_len]
             - router_logits: Raw router scores (if requested)
             - routing_info: Additional routing statistics
+            
+        Raises:
+            ComplexityEstimationError: If complexity estimation fails
+            ExpertDispatchError: If expert selection fails
+            ValidationError: If inputs are invalid
         """
-        batch_size, seq_len, hidden_dim = hidden_states.shape
+        # Validate and sanitize inputs
+        try:
+            validate_tensor_shape(
+                hidden_states, 
+                expected_dims=3,
+                min_shape=(1, 1, 1),
+                name="hidden_states"
+            )
+            
+            batch_size, seq_len, hidden_dim = hidden_states.shape
+            
+            if hidden_dim != self.input_dim:
+                raise RouterConfigurationError(
+                    f"Input hidden_dim ({hidden_dim}) doesn't match router input_dim ({self.input_dim})"
+                )
+            
+            # Check memory usage for large inputs
+            check_memory_usage(hidden_states, "hidden_states")
+            
+            # Sanitize routing kwargs
+            complexity_kwargs = sanitize_routing_kwargs(**complexity_kwargs)
+            
+        except Exception as e:
+            logger.error(f"Input validation failed: {e}")
+            raise
         
         # Step 1: Estimate input complexity
-        complexity_scores = self.complexity_estimator.estimate(
-            hidden_states, **complexity_kwargs
-        )
+        try:
+            logger.debug("Estimating input complexity...")
+            complexity_scores = self.complexity_estimator.estimate(
+                hidden_states, **complexity_kwargs
+            )
+            validate_complexity_scores(complexity_scores)
+            
+        except Exception as e:
+            logger.error(f"Complexity estimation failed: {e}")
+            raise ComplexityEstimationError(f"Failed to estimate complexity: {e}")
         
         # Step 2: Determine number of experts per token
-        num_experts_per_token = self._compute_expert_counts(complexity_scores)
+        try:
+            num_experts_per_token = self._compute_expert_counts(complexity_scores)
+            
+        except Exception as e:
+            logger.error(f"Expert count computation failed: {e}")
+            raise ExpertDispatchError(f"Failed to compute expert counts: {e}")
         
         # Step 3: Compute router logits
-        router_logits = self._compute_router_logits(hidden_states)
-        
-        # Step 4: Apply noise for regularization
-        if self.noise_factor > 0:
-            router_logits = self._add_routing_noise(router_logits)
+        try:
+            router_logits = self._compute_router_logits(hidden_states)
+            
+            # Step 4: Apply noise for regularization
+            if self.noise_factor > 0:
+                router_logits = self._add_routing_noise(router_logits)
+                
+        except Exception as e:
+            logger.error(f"Router logits computation failed: {e}")
+            raise ExpertDispatchError(f"Failed to compute router logits: {e}")
         
         # Step 5: Select experts based on strategy
-        expert_indices, expert_weights = self._select_experts(
-            router_logits, num_experts_per_token
-        )
+        try:
+            logger.debug(f"Selecting experts using {self.routing_strategy} strategy...")
+            expert_indices, expert_weights = self._select_experts(
+                router_logits, num_experts_per_token
+            )
+            
+            # Validate expert selection results
+            validate_expert_indices(expert_indices, self.num_experts)
+            validate_expert_weights(expert_weights, expert_indices)
+            
+        except Exception as e:
+            logger.error(f"Expert selection failed: {e}")
+            raise ExpertDispatchError(f"Failed to select experts: {e}")
         
         # Step 6: Apply load balancing
         if self.load_balancing:
-            expert_weights = self._apply_load_balancing(
-                expert_indices, expert_weights, router_logits
-            )
+            try:
+                logger.debug("Applying load balancing...")
+                expert_weights = self._apply_load_balancing(
+                    expert_indices, expert_weights, router_logits
+                )
+                validate_expert_weights(expert_weights, expert_indices)
+                
+            except Exception as e:
+                logger.warning(f"Load balancing failed, continuing without: {e}")
+                # Load balancing failure is non-fatal
         
         # Compile results
         result = {

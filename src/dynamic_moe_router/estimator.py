@@ -158,6 +158,13 @@ class AttentionEntropyEstimator(ComplexityEstimator):
     
     def _compute_attention_entropy(self, attention_weights: Any) -> Any:
         """Compute entropy of attention distributions."""
+        # attention_weights can be [batch, seq_len, seq_len] or [batch, num_heads, seq_len, seq_len]
+        
+        # Handle pseudo-attention case (no heads dimension)
+        if attention_weights.ndim == 3:
+            # Add heads dimension: [batch, seq_len, seq_len] -> [batch, 1, seq_len, seq_len]
+            attention_weights = attention_weights[:, np.newaxis, :, :]
+        
         # attention_weights: [batch, num_heads, seq_len, seq_len]
         log_probs = np.log(np.clip(attention_weights, self.epsilon, 1.0))
         entropy = -np.sum(attention_weights * log_probs, axis=-1)  # [batch, num_heads, seq_len]
@@ -166,7 +173,7 @@ class AttentionEntropyEstimator(ComplexityEstimator):
         if self.head_aggregation == 'mean':
             return np.mean(entropy, axis=1)  # [batch, seq_len]
         elif self.head_aggregation == 'max':
-            return np.max(entropy, axis=1)
+            return np.max(entropy, axis=1)[0] if entropy.ndim > 2 else np.max(entropy, axis=1)
         else:
             raise ValueError(f"Unknown head aggregation: {self.head_aggregation}")
     
