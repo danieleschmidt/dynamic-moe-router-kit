@@ -1,9 +1,8 @@
 """FLOP profiling and performance analysis for dynamic MoE routing."""
 
 import time
-from typing import Dict, Any, List, Optional, Union
-from contextlib import contextmanager
 from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -15,19 +14,19 @@ class FLOPCount:
     expert_flops: Dict[int, int] = field(default_factory=dict)
     routing_flops: int = 0
     complexity_estimation_flops: int = 0
-    
+
     def add_expert_flops(self, expert_id: int, flops: int):
         """Add FLOPs for a specific expert."""
         if expert_id not in self.expert_flops:
             self.expert_flops[expert_id] = 0
         self.expert_flops[expert_id] += flops
         self.total_flops += flops
-    
+
     def add_routing_flops(self, flops: int):
         """Add routing overhead FLOPs."""
         self.routing_flops += flops
         self.total_flops += flops
-    
+
     def add_complexity_flops(self, flops: int):
         """Add complexity estimation FLOPs."""
         self.complexity_estimation_flops += flops
@@ -42,11 +41,11 @@ class ProfilerStats:
     memory_usage: Dict[str, int] = field(default_factory=dict)
     expert_utilization: Dict[int, int] = field(default_factory=dict)
     routing_decisions: List[Dict[str, Any]] = field(default_factory=list)
-    
+
     def add_routing_decision(self, decision: Dict[str, Any]):
         """Record a routing decision."""
         self.routing_decisions.append(decision)
-        
+
         # Update expert utilization
         if 'expert_indices' in decision:
             indices = decision['expert_indices']
@@ -64,13 +63,13 @@ class FLOPProfiler:
     This profiler tracks FLOPs, memory usage, and timing information
     for MoE layers with dynamic routing.
     """
-    
+
     def __init__(self, detailed_tracking: bool = True):
         self.detailed_tracking = detailed_tracking
         self.stats = ProfilerStats()
         self.is_active = False
         self._start_time = None
-        
+
         # FLOP estimation constants (rough estimates for common operations)
         self.FLOP_ESTIMATES = {
             'linear': lambda input_size, output_size: 2 * input_size * output_size,
@@ -80,28 +79,28 @@ class FLOPProfiler:
             'complexity_estimation': lambda batch_size, seq_len, hidden_dim: batch_size * seq_len * hidden_dim * 10,
             'router_logits': lambda batch_size, seq_len, hidden_dim, num_experts: 2 * batch_size * seq_len * hidden_dim * num_experts,
         }
-    
+
     def start(self):
         """Start profiling session."""
         self.is_active = True
         self._start_time = time.time()
         self.stats = ProfilerStats()
-    
+
     def stop(self):
         """Stop profiling session."""
         if self.is_active and self._start_time:
             self.stats.wall_time = time.time() - self._start_time
         self.is_active = False
-    
+
     def __enter__(self):
         """Context manager entry."""
         self.start()
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit."""
         self.stop()
-    
+
     def profile_routing_decision(
         self,
         hidden_states_shape: tuple,
@@ -117,27 +116,27 @@ class FLOPProfiler:
         """
         if not self.is_active:
             return
-        
+
         batch_size, seq_len, hidden_dim = hidden_states_shape
-        
+
         # Estimate complexity estimation FLOPs
         complexity_flops = self.FLOP_ESTIMATES['complexity_estimation'](
             batch_size, seq_len, hidden_dim
         )
         self.stats.flop_count.add_complexity_flops(complexity_flops)
-        
+
         # Estimate routing FLOPs
         routing_flops = self.FLOP_ESTIMATES['router_logits'](
             batch_size, seq_len, hidden_dim, num_experts
         )
-        
+
         # Add softmax for expert selection
         routing_flops += self.FLOP_ESTIMATES['softmax'](batch_size * seq_len * num_experts)
         self.stats.flop_count.add_routing_flops(routing_flops)
-        
+
         # Track routing decision
         self.stats.add_routing_decision(routing_result)
-    
+
     def profile_expert_computation(
         self,
         expert_id: int,
@@ -155,7 +154,7 @@ class FLOPProfiler:
         """
         if not self.is_active:
             return
-        
+
         # Estimate FLOPs based on operation type
         if operation_type == 'linear':
             input_size = np.prod(input_shape)
@@ -166,15 +165,15 @@ class FLOPProfiler:
             hidden_dim = input_shape[-1]
             intermediate_dim = hidden_dim * 4
             # First layer + activation + second layer
-            flops = (self.FLOP_ESTIMATES['linear'](hidden_dim, intermediate_dim) + 
+            flops = (self.FLOP_ESTIMATES['linear'](hidden_dim, intermediate_dim) +
                     intermediate_dim +  # ReLU activation
                     self.FLOP_ESTIMATES['linear'](intermediate_dim, hidden_dim))
         else:
             # Fallback estimation
             flops = np.prod(input_shape) * 100  # Rough estimate
-        
+
         self.stats.flop_count.add_expert_flops(expert_id, flops)
-    
+
     def estimate_static_moe_flops(
         self,
         batch_size: int,
@@ -196,32 +195,32 @@ class FLOPProfiler:
             Estimated FLOPs for static MoE
         """
         total_tokens = batch_size * seq_len
-        
+
         # Routing overhead (same for static and dynamic)
         routing_flops = self.FLOP_ESTIMATES['router_logits'](
             batch_size, seq_len, hidden_dim, num_experts
         )
         routing_flops += self.FLOP_ESTIMATES['softmax'](total_tokens * num_experts)
-        
+
         # Expert computation (all experts for all tokens in static MoE)
         if expert_type == 'mlp':
             intermediate_dim = hidden_dim * 4
             expert_flops_per_token = (
-                self.FLOP_ESTIMATES['linear'](hidden_dim, intermediate_dim) + 
+                self.FLOP_ESTIMATES['linear'](hidden_dim, intermediate_dim) +
                 intermediate_dim +  # ReLU
                 self.FLOP_ESTIMATES['linear'](intermediate_dim, hidden_dim)
             )
         else:
             expert_flops_per_token = hidden_dim * 100  # Fallback
-        
+
         total_expert_flops = total_tokens * num_experts * expert_flops_per_token
-        
+
         return routing_flops + total_expert_flops
-    
+
     def compute_efficiency_metrics(
         self,
         batch_size: int,
-        seq_len: int, 
+        seq_len: int,
         hidden_dim: int,
         num_experts: int
     ) -> Dict[str, Any]:
@@ -232,23 +231,23 @@ class FLOPProfiler:
         """
         if not self.stats.routing_decisions:
             return {'error': 'No routing decisions recorded'}
-        
+
         # Actual FLOPs from dynamic routing
         dynamic_flops = self.stats.flop_count.total_flops
-        
+
         # Estimated static MoE FLOPs
         static_flops = self.estimate_static_moe_flops(
             batch_size, seq_len, hidden_dim, num_experts
         )
-        
+
         # FLOP reduction
         flop_reduction = (static_flops - dynamic_flops) / static_flops if static_flops > 0 else 0.0
-        
+
         # Expert utilization statistics
         total_expert_calls = sum(self.stats.expert_utilization.values())
         max_possible_calls = len(self.stats.routing_decisions) * num_experts
         utilization_efficiency = 1.0 - (total_expert_calls / max_possible_calls) if max_possible_calls > 0 else 0.0
-        
+
         # Load balance analysis
         if self.stats.expert_utilization:
             utilization_values = list(self.stats.expert_utilization.values())
@@ -257,7 +256,7 @@ class FLOPProfiler:
         else:
             load_balance_variance = 0.0
             load_balance_score = 1.0
-        
+
         return {
             'flop_reduction_ratio': flop_reduction,
             'flop_reduction_percent': flop_reduction * 100,
@@ -271,22 +270,22 @@ class FLOPProfiler:
             'wall_time_seconds': self.stats.wall_time,
             'flops_per_second': dynamic_flops / self.stats.wall_time if self.stats.wall_time > 0 else 0
         }
-    
+
     def summary(self) -> str:
         """Generate a human-readable summary of profiling results."""
         if not self.stats.routing_decisions:
             return "No profiling data available. Use profiler as context manager or call start()/stop()."
-        
+
         # Get basic stats
         total_decisions = len(self.stats.routing_decisions)
         total_flops = self.stats.flop_count.total_flops
         wall_time = self.stats.wall_time
-        
+
         # Expert utilization
         expert_calls = self.stats.expert_utilization
         most_used = max(expert_calls.items(), key=lambda x: x[1]) if expert_calls else (0, 0)
         least_used = min(expert_calls.items(), key=lambda x: x[1]) if expert_calls else (0, 0)
-        
+
         summary = f"""
 Dynamic MoE Profiling Summary
 ============================
@@ -308,9 +307,9 @@ Expert Utilization:
   Least used expert: #{least_used[0]} ({least_used[1]} calls)
   Total expert calls: {sum(expert_calls.values())}
 """
-        
+
         return summary
-    
+
     def detailed_breakdown(self) -> Dict[str, Any]:
         """Get detailed breakdown of all profiling data."""
         return {
@@ -329,11 +328,11 @@ Expert Utilization:
 
 class ComparisonProfiler:
     """Compare dynamic vs static MoE performance."""
-    
+
     def __init__(self):
         self.dynamic_profiler = FLOPProfiler()
         self.static_baseline = None
-    
+
     def set_static_baseline(
         self,
         batch_size: int,
@@ -346,7 +345,7 @@ class ComparisonProfiler:
         static_flops = self.dynamic_profiler.estimate_static_moe_flops(
             batch_size, seq_len, hidden_dim, num_experts
         )
-        
+
         self.static_baseline = {
             'flops': static_flops,
             'wall_time': wall_time,
@@ -355,20 +354,20 @@ class ComparisonProfiler:
             'hidden_dim': hidden_dim,
             'num_experts': num_experts
         }
-    
+
     def compare_performance(self) -> Dict[str, Any]:
         """Compare dynamic vs static performance."""
         if not self.static_baseline:
             return {'error': 'Static baseline not set'}
-        
+
         # Get dynamic performance
         dynamic_flops = self.dynamic_profiler.stats.flop_count.total_flops
         dynamic_time = self.dynamic_profiler.stats.wall_time
-        
+
         # Compare
         flop_speedup = self.static_baseline['flops'] / dynamic_flops if dynamic_flops > 0 else 0
         time_speedup = self.static_baseline['wall_time'] / dynamic_time if dynamic_time > 0 else 0
-        
+
         return {
             'flop_speedup': flop_speedup,
             'time_speedup': time_speedup,
