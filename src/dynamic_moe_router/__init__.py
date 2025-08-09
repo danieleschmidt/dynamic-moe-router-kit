@@ -5,18 +5,18 @@ __author__ = "Daniel Schmidt"
 __email__ = "author@example.com"
 
 # Core components
-from .router import DynamicRouter, AdaptiveRouter
 from .estimator import (
+    ESTIMATOR_REGISTRY,
+    AttentionEntropyEstimator,
     ComplexityEstimator,
     GradientNormEstimator,
-    AttentionEntropyEstimator,
     PerplexityProxyEstimator,
     ThresholdEstimator,
     get_estimator,
-    ESTIMATOR_REGISTRY
 )
-from .moe import MoELayer, SparseMoELayer, LayerNormMoE
-from .profiler import FLOPProfiler, ComparisonProfiler
+from .moe import LayerNormMoE, MoELayer, SparseMoELayer
+from .profiler import ComparisonProfiler, FLOPProfiler
+from .router import AdaptiveRouter, DynamicRouter
 
 # Framework-specific implementations (optional imports)
 try:
@@ -28,12 +28,12 @@ except ImportError:
 if _torch_available:
     try:
         from .torch import (
-            TorchDynamicRouter,
-            TorchMoELayer,
-            TorchGradientNormEstimator,
             TorchAttentionEntropyEstimator,
+            TorchDynamicRouter,
+            TorchGradientNormEstimator,
+            TorchMoELayer,
             TorchPerplexityProxyEstimator,
-            patch_model_with_dynamic_routing
+            patch_model_with_dynamic_routing,
         )
         TORCH_AVAILABLE = True
     except ImportError as e:
@@ -50,7 +50,7 @@ __all__ = [
     "AdaptiveRouter",
     "ComplexityEstimator",
     "GradientNormEstimator",
-    "AttentionEntropyEstimator", 
+    "AttentionEntropyEstimator",
     "PerplexityProxyEstimator",
     "ThresholdEstimator",
     "get_estimator",
