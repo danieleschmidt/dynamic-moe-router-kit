@@ -1,0 +1,31 @@
+{
+  "router_config": {
+    "input_dim": 768,
+    "num_experts": 8,
+    "min_experts": 1,
+    "max_experts": 3,
+    "complexity_estimator": "gradient_norm",
+    "routing_strategy": "top_k",
+    "load_balancing": true,
+    "noise_factor": 0.1
+  },
+  "performance": {
+    "enable_caching": true,
+    "enable_monitoring": true,
+    "cache_size": 10000,
+    "monitoring_window": 1000
+  },
+  "security": {
+    "enable_validation": true,
+    "max_tensor_size": 1000000000,
+    "max_batch_size": 1024,
+    "trusted_dtypes": ["float32", "float64", "int32", "int64"]
+  },
+  "deployment": {
+    "environment": "production",
+    "log_level": "INFO",
+    "metrics_enabled": true,
+    "health_check_interval": 30,
+    "graceful_shutdown_timeout": 60
+  }
+}

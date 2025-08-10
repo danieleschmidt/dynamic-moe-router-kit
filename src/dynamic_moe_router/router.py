@@ -534,3 +534,12 @@ class AdaptiveRouter(DynamicRouter):
             expert_counts[mask] = i + 1
 
         return expert_counts
+
+    def get_adaptation_stats(self) -> Dict[str, Any]:
+        """Get adaptive threshold learning statistics."""
+        return {
+            'current_thresholds': self.complexity_thresholds.tolist(),
+            'performance_history_length': len(self.performance_history),
+            'adaptation_rate': self.adaptation_rate,
+            'recent_performance': self.performance_history[-5:] if len(self.performance_history) >= 5 else self.performance_history
+        }
