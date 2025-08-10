@@ -2,13 +2,26 @@
 
 import logging
 import warnings
-from typing import Any, Dict, Optional, Tuple
+import hashlib
+import time
+from typing import Any, Dict, Optional, Tuple, Union, List
 
 import numpy as np
 
-from .exceptions import RouterConfigurationError, ValidationError
+from .exceptions import RouterConfigurationError, ValidationError, BackendError
 
 logger = logging.getLogger(__name__)
+
+# Security constants
+MAX_TENSOR_SIZE = 1_000_000_000  # 1B elements max
+MAX_BATCH_SIZE = 1024
+MAX_SEQUENCE_LENGTH = 8192
+MAX_HIDDEN_DIM = 16384
+MAX_NUM_EXPERTS = 128
+MIN_EXPERTS = 1
+TRUSTED_DTYPES = {np.float32, np.float64, np.int32, np.int64}
+MAX_COMPLEXITY_SCORE = 10.0
+MIN_COMPLEXITY_SCORE = 0.0
 
 
 def validate_tensor_shape(
@@ -51,6 +64,194 @@ def validate_tensor_shape(
                 raise ValidationError(
                     f"{name} dimension {i} must be <= {max_val}, got {actual}"
                 )
+
+
+def validate_dtype_security(tensor: Any, name: str = "tensor") -> None:
+    """Validate tensor data type for security.
+    
+    Args:
+        tensor: Input tensor to validate
+        name: Name for error messages
+        
+    Raises:
+        ValidationError: If dtype is not trusted
+    """
+    if hasattr(tensor, 'dtype'):
+        if tensor.dtype not in TRUSTED_DTYPES:
+            raise ValidationError(
+                f"{name} dtype {tensor.dtype} not in trusted types: {TRUSTED_DTYPES}"
+            )
+    
+    # Check for unusual values that might indicate adversarial inputs
+    if hasattr(tensor, 'min') and hasattr(tensor, 'max'):
+        min_val, max_val = float(tensor.min()), float(tensor.max())
+        
+        # Detect extreme values
+        if abs(min_val) > 1e6 or abs(max_val) > 1e6:
+            warnings.warn(
+                f"{name} contains extreme values: min={min_val:.2e}, max={max_val:.2e}", 
+                UserWarning
+            )
+            
+        # Detect NaN/Inf values
+        if np.isnan(tensor).any():
+            raise ValidationError(f"{name} contains NaN values")
+        if np.isinf(tensor).any():
+            raise ValidationError(f"{name} contains infinite values")
+
+
+def validate_tensor_size_limits(tensor: Any, name: str = "tensor") -> None:
+    """Validate tensor doesn't exceed security size limits.
+    
+    Args:
+        tensor: Input tensor to validate
+        name: Name for error messages
+        
+    Raises:
+        ValidationError: If tensor exceeds size limits
+    """
+    if hasattr(tensor, 'size'):
+        total_size = int(tensor.size)
+        if total_size > MAX_TENSOR_SIZE:
+            raise ValidationError(
+                f"{name} size {total_size} exceeds maximum {MAX_TENSOR_SIZE}"
+            )
+    
+    # Validate specific dimensions for MoE context
+    if hasattr(tensor, 'shape') and len(tensor.shape) >= 3:
+        batch_size, seq_len, hidden_dim = tensor.shape[:3]
+        
+        if batch_size > MAX_BATCH_SIZE:
+            raise ValidationError(
+                f"Batch size {batch_size} exceeds maximum {MAX_BATCH_SIZE}"
+            )
+        if seq_len > MAX_SEQUENCE_LENGTH:
+            raise ValidationError(
+                f"Sequence length {seq_len} exceeds maximum {MAX_SEQUENCE_LENGTH}"
+            )
+        if hidden_dim > MAX_HIDDEN_DIM:
+            raise ValidationError(
+                f"Hidden dimension {hidden_dim} exceeds maximum {MAX_HIDDEN_DIM}"
+            )
+
+
+def validate_input_integrity(tensor: Any, name: str = "tensor") -> str:
+    """Validate input tensor integrity using hash verification.
+    
+    Args:
+        tensor: Input tensor to validate
+        name: Name for error messages
+        
+    Returns:
+        SHA-256 hash of tensor for integrity checking
+        
+    Raises:
+        ValidationError: If tensor integrity check fails
+    """
+    try:
+        # Convert to bytes for hashing
+        if hasattr(tensor, 'tobytes'):
+            tensor_bytes = tensor.tobytes()
+        else:
+            tensor_bytes = str(tensor).encode('utf-8')
+            
+        # Compute hash
+        hash_obj = hashlib.sha256(tensor_bytes)
+        tensor_hash = hash_obj.hexdigest()
+        
+        logger.debug(f"Computed integrity hash for {name}: {tensor_hash[:16]}...")
+        return tensor_hash
+        
+    except Exception as e:
+        raise ValidationError(f"Failed to compute integrity hash for {name}: {e}")
+
+
+def sanitize_routing_kwargs(**kwargs) -> Dict[str, Any]:
+    """Sanitize routing keyword arguments for security.
+    
+    Args:
+        **kwargs: Routing arguments to sanitize
+        
+    Returns:
+        Sanitized arguments dictionary
+        
+    Raises:
+        ValidationError: If arguments contain unsafe values
+    """
+    sanitized = {}
+    
+    for key, value in kwargs.items():
+        # Validate key names (prevent injection)
+        if not key.isalnum() and '_' not in key:
+            raise ValidationError(f"Invalid argument name: {key}")
+        
+        # Sanitize values
+        if isinstance(value, (int, float)):
+            if abs(value) > 1e6:
+                raise ValidationError(f"Argument {key}={value} exceeds safe range")
+            sanitized[key] = float(value)
+        elif isinstance(value, str):
+            if len(value) > 256:  # Prevent buffer overflow attacks
+                raise ValidationError(f"String argument {key} exceeds length limit")
+            sanitized[key] = value.strip()
+        elif isinstance(value, bool):
+            sanitized[key] = bool(value)
+        elif value is None:
+            sanitized[key] = None
+        else:
+            # Log and skip unknown types
+            logger.warning(f"Skipping unknown argument type: {key}={type(value)}")
+    
+    return sanitized
+
+
+def check_memory_usage(tensor: Any, name: str = "tensor") -> Dict[str, float]:
+    """Check memory usage of tensor and system resources.
+    
+    Args:
+        tensor: Input tensor to analyze
+        name: Name for logging
+        
+    Returns:
+        Memory usage statistics
+        
+    Raises:
+        ValidationError: If memory usage is excessive
+    """
+    try:
+        import psutil
+        
+        # Get tensor memory usage
+        tensor_memory_mb = 0.0
+        if hasattr(tensor, 'nbytes'):
+            tensor_memory_mb = tensor.nbytes / (1024 * 1024)
+        
+        # Get system memory
+        memory = psutil.virtual_memory()
+        available_memory_mb = memory.available / (1024 * 1024)
+        
+        # Check if tensor would consume too much memory
+        if tensor_memory_mb > available_memory_mb * 0.5:  # 50% limit
+            raise ValidationError(
+                f"{name} requires {tensor_memory_mb:.1f}MB but only "
+                f"{available_memory_mb:.1f}MB available"
+            )
+        
+        stats = {
+            'tensor_memory_mb': tensor_memory_mb,
+            'available_memory_mb': available_memory_mb,
+            'memory_usage_percent': memory.percent
+        }
+        
+        logger.debug(f"Memory check for {name}: {stats}")
+        return stats
+        
+    except ImportError:
+        logger.warning("psutil not available, skipping memory check")
+        return {'tensor_memory_mb': 0.0, 'available_memory_mb': float('inf'), 'memory_usage_percent': 0.0}
+    except Exception as e:
+        logger.warning(f"Memory check failed: {e}")
+        return {'tensor_memory_mb': 0.0, 'available_memory_mb': float('inf'), 'memory_usage_percent': 0.0}
 
 
 def validate_router_config(

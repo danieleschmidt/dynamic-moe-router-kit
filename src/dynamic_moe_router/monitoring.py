@@ -3,41 +3,93 @@
 import logging
 import threading
 import time
+import json
+import os
 from collections import defaultdict, deque
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, List
+from contextlib import contextmanager
+from dataclasses import dataclass, asdict
 
 import numpy as np
 
-from .exceptions import DynamicMoEError
+from .exceptions import DynamicMoEError, ProfilingError
+from .security import SecurityMonitor, get_security_monitor
 
 logger = logging.getLogger(__name__)
 
 
-class PerformanceMonitor:
-    """Comprehensive performance monitoring for MoE routing."""
+@dataclass
+class AlertEvent:
+    """Represents a performance alert."""
+    timestamp: float
+    metric: str
+    value: float
+    threshold: float
+    severity: str
+    message: str
+
+
+@dataclass
+class PerformanceSnapshot:
+    """Performance metrics snapshot."""
+    timestamp: float
+    avg_latency_ms: float
+    p95_latency_ms: float
+    p99_latency_ms: float
+    error_rate: float
+    throughput_rps: float
+    load_balance_variance: float
+    memory_usage_mb: float
+    expert_utilization: List[float]
+    active_connections: int
+
+
+class EnhancedPerformanceMonitor:
+    """Comprehensive performance monitoring with security integration."""
 
     def __init__(self, window_size: int = 1000, alert_thresholds: Optional[Dict[str, float]] = None):
         self.window_size = window_size
         self.alert_thresholds = alert_thresholds or {
             'avg_latency_ms': 100.0,
+            'p95_latency_ms': 500.0,
+            'p99_latency_ms': 1000.0,
             'error_rate': 0.05,
             'load_balance_variance': 0.1,
-            'memory_usage_mb': 1000.0
+            'memory_usage_mb': 1000.0,
+            'throughput_rps': 1.0  # Min throughput
         }
 
         # Thread-safe metrics storage
         self._lock = threading.Lock()
         self._metrics = defaultdict(lambda: deque(maxlen=window_size))
         self._counters = defaultdict(int)
-        self._alerts = []
+        self._alerts = deque(maxlen=100)  # Recent alerts
+        self._snapshots = deque(maxlen=1000)  # Historical snapshots
 
         # Performance tracking
         self._call_times = deque(maxlen=window_size)
         self._error_count = 0
         self._success_count = 0
+        self._start_time = time.time()
+        
+        # Security integration
+        self._security_monitor = get_security_monitor()
+        
+        # Alert callbacks
+        self._alert_callbacks: List[Callable[[AlertEvent], None]] = []
+        
+        # Persistent logging
+        self._enable_logging = os.getenv('MOE_MONITOR_LOGGING', 'false').lower() == 'true'
+        self._log_file = os.getenv('MOE_MONITOR_LOG_FILE', 'moe_performance.jsonl')
 
+    def add_alert_callback(self, callback: Callable[[AlertEvent], None]) -> None:
+        """Add callback function for alert notifications."""
+        self._alert_callbacks.append(callback)
+    
     def record_call(self, duration_ms: float, success: bool = True, **metrics):
-        """Record a routing call with performance metrics."""
+        """Record a routing call with comprehensive performance metrics."""
+        timestamp = time.time()
+        
         with self._lock:
             self._call_times.append(duration_ms)
 
@@ -45,10 +97,149 @@ class PerformanceMonitor:
                 self._success_count += 1
             else:
                 self._error_count += 1
+                # Log security event for errors
+                self._security_monitor.log_event(
+                    'routing_error',
+                    'medium',
+                    f'Routing call failed after {duration_ms:.2f}ms'
+                )
 
-            # Store additional metrics
+            # Store additional metrics with timestamps
             for key, value in metrics.items():
-                self._metrics[key].append(value)
+                self._metrics[key].append((timestamp, value))
+            
+            # Check for alerts
+            self._check_alerts()
+            
+            # Periodic snapshot
+            if len(self._call_times) % 100 == 0:  # Every 100 calls
+                self._create_snapshot()
+    
+    def _check_alerts(self) -> None:
+        """Check metrics against thresholds and generate alerts."""
+        if not self._call_times:
+            return
+            
+        current_metrics = self._compute_current_metrics()
+        
+        for metric, threshold in self.alert_thresholds.items():
+            current_value = current_metrics.get(metric, 0)
+            
+            # Different alert logic based on metric
+            alert_triggered = False
+            severity = 'medium'
+            
+            if metric in ['avg_latency_ms', 'p95_latency_ms', 'p99_latency_ms', 'memory_usage_mb']:
+                alert_triggered = current_value > threshold
+                severity = 'high' if current_value > threshold * 2 else 'medium'
+            elif metric == 'error_rate':
+                alert_triggered = current_value > threshold
+                severity = 'critical' if current_value > 0.2 else 'high'
+            elif metric == 'throughput_rps':
+                alert_triggered = current_value < threshold
+                severity = 'medium'
+            elif metric == 'load_balance_variance':
+                alert_triggered = current_value > threshold
+                severity = 'medium'
+            
+            if alert_triggered:
+                alert = AlertEvent(
+                    timestamp=time.time(),
+                    metric=metric,
+                    value=current_value,
+                    threshold=threshold,
+                    severity=severity,
+                    message=f"{metric} = {current_value:.3f} exceeds threshold {threshold:.3f}"
+                )
+                
+                self._alerts.append(alert)
+                
+                # Notify callbacks
+                for callback in self._alert_callbacks:
+                    try:
+                        callback(alert)
+                    except Exception as e:
+                        logger.error(f"Alert callback failed: {e}")
+                
+                # Log to security monitor
+                self._security_monitor.log_event(
+                    'performance_alert',
+                    severity,
+                    alert.message
+                )
+    
+    def _compute_current_metrics(self) -> Dict[str, float]:
+        """Compute current performance metrics."""
+        if not self._call_times:
+            return {}
+        
+        call_times = list(self._call_times)
+        total_calls = self._success_count + self._error_count
+        
+        metrics = {
+            'avg_latency_ms': np.mean(call_times),
+            'p95_latency_ms': np.percentile(call_times, 95),
+            'p99_latency_ms': np.percentile(call_times, 99),
+            'error_rate': self._error_count / max(total_calls, 1),
+            'throughput_rps': len(call_times) / max(time.time() - self._start_time, 1)
+        }
+        
+        # Add memory usage if available
+        try:
+            import psutil
+            process = psutil.Process()
+            metrics['memory_usage_mb'] = process.memory_info().rss / (1024 * 1024)
+        except ImportError:
+            metrics['memory_usage_mb'] = 0.0
+        
+        # Compute load balance variance if expert utilization data exists
+        if 'expert_utilization' in self._metrics:
+            recent_utils = [util for _, util in list(self._metrics['expert_utilization'])[-10:]]
+            if recent_utils:
+                metrics['load_balance_variance'] = np.var(recent_utils[-1]) if recent_utils else 0.0
+        
+        return metrics
+    
+    def _create_snapshot(self) -> None:
+        """Create performance snapshot for historical tracking."""
+        current_metrics = self._compute_current_metrics()
+        
+        # Get expert utilization
+        expert_util = []
+        if 'expert_utilization' in self._metrics and self._metrics['expert_utilization']:
+            expert_util = list(self._metrics['expert_utilization'])[-1][1]  # Latest utilization
+        
+        snapshot = PerformanceSnapshot(
+            timestamp=time.time(),
+            avg_latency_ms=current_metrics.get('avg_latency_ms', 0.0),
+            p95_latency_ms=current_metrics.get('p95_latency_ms', 0.0),
+            p99_latency_ms=current_metrics.get('p99_latency_ms', 0.0),
+            error_rate=current_metrics.get('error_rate', 0.0),
+            throughput_rps=current_metrics.get('throughput_rps', 0.0),
+            load_balance_variance=current_metrics.get('load_balance_variance', 0.0),
+            memory_usage_mb=current_metrics.get('memory_usage_mb', 0.0),
+            expert_utilization=expert_util,
+            active_connections=threading.active_count()
+        )
+        
+        self._snapshots.append(snapshot)
+        
+        # Log to file if enabled
+        if self._enable_logging:
+            self._log_snapshot(snapshot)
+    
+    def _log_snapshot(self, snapshot: PerformanceSnapshot) -> None:
+        """Log performance snapshot to file."""
+        try:
+            log_entry = {
+                'type': 'performance_snapshot',
+                **asdict(snapshot)
+            }
+            
+            with open(self._log_file, 'a') as f:
+                f.write(json.dumps(log_entry) + '\n')
+        except Exception as e:
+            logger.warning(f"Failed to log performance snapshot: {e}")
 
             # Check for alerts
             self._check_alerts()

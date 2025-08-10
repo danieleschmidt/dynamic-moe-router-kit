@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-moe-router
+  labels:
+    app: dynamic-moe-router
+    version: v1.0.0
+    component: inference
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dynamic-moe-router
+  template:
+    metadata:
+      labels:
+        app: dynamic-moe-router
+    spec:
+      containers:
+      - name: moe-router
+        image: dynamic-moe-router:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: MOE_INPUT_DIM
+          value: "768"
+        - name: MOE_NUM_EXPERTS
+          value: "8"
+        - name: MOE_MIN_EXPERTS
+          value: "1"
+        - name: MOE_MAX_EXPERTS
+          value: "3"
+        - name: MOE_ENABLE_CACHING
+          value: "true"
+        - name: MOE_ENABLE_MONITORING
+          value: "true"
+        - name: MOE_SECURITY_LEVEL
+          value: "standard"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /app/config
+          readOnly: true
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: config
+        configMap:
+          name: moe-config
+      - name: logs
+        emptyDir: {}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamic-moe-router-service
+spec:
+  selector:
+    app: dynamic-moe-router
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 8000
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: moe-config
+data:
+  production.json: |
+    {
+      "router_config": {
+        "input_dim": 768,
+        "num_experts": 8,
+        "min_experts": 1,
+        "max_experts": 3,
+        "complexity_estimator": "gradient_norm",
+        "routing_strategy": "top_k",
+        "load_balancing": true,
+        "noise_factor": 0.1
+      },
+      "performance": {
+        "enable_caching": true,
+        "enable_monitoring": true
+      },
+      "security": {
+        "enable_validation": true
+      }
+    }
