@@ -43,14 +43,14 @@ class TestDynamicRouter:
         with pytest.raises(RouterConfigurationError, match="min_experts must be"):
             DynamicRouter(input_dim=64, num_experts=8, min_experts=0)
         
-        with pytest.raises(RouterConfigurationError, match="min_experts"):
+        with pytest.raises(RouterConfigurationError, match="min_experts.*cannot be greater than num_experts"):
             DynamicRouter(input_dim=64, num_experts=8, min_experts=10)
         
-        # Invalid max_experts
-        with pytest.raises(RouterConfigurationError, match="max_experts"):
-            DynamicRouter(input_dim=64, num_experts=8, max_experts=0)
+        # Invalid max_experts (test with explicit max_experts > num_experts)
+        with pytest.raises(RouterConfigurationError, match="max_experts.*cannot be greater than num_experts"):
+            DynamicRouter(input_dim=64, num_experts=8, max_experts=10)
         
-        with pytest.raises(RouterConfigurationError, match="max_experts"):
+        with pytest.raises(RouterConfigurationError, match="max_experts.*cannot be less than min_experts"):
             DynamicRouter(input_dim=64, num_experts=8, min_experts=3, max_experts=2)
     
     def test_router_network_initialization(self, router_config):

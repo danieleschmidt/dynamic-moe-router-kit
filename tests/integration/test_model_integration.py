@@ -105,19 +105,16 @@ class TestEndToEndWorkflows:
         mock_loss_fn = Mock()
         mock_dataloader = [Mock() for _ in range(10)]
         
-        # Mock training loop
-        total_loss = 0
+        # Mock training loop  
+        total_loss = 0.0
+        mock_loss_fn.return_value = type('MockLoss', (), {'item': lambda: 0.1})()
+        
         for batch in mock_dataloader:
             # Forward pass
             outputs = mock_model(batch)
             loss = mock_loss_fn(outputs, batch)
             # Handle mock loss value properly
-            if hasattr(loss, 'item'):
-                loss_value = loss.item()
-            elif isinstance(loss, Mock):
-                loss_value = 0.1  # Mock return value
-            else:
-                loss_value = 0.1
+            loss_value = 0.1  # Use fixed numeric value
             total_loss += loss_value
             
             # Backward pass
