@@ -16,7 +16,14 @@ from .estimator import (
 )
 from .moe import LayerNormMoE, MoELayer, SparseMoELayer
 from .profiler import ComparisonProfiler, FLOPProfiler
-from .router import AdaptiveRouter, DynamicRouter
+from .router import DynamicRouter
+from .adaptive_router import EnhancedDynamicRouter, AdaptiveLoadBalancer
+from .secure_router import SecureEnhancedRouter
+from .robust_security import SecurityValidator, RobustErrorHandler, ResourceMonitor
+from .health_monitoring import HealthMonitor, HealthMetric, PerformanceSnapshot
+from .high_performance import PerformanceOptimizer, ConcurrentRouter
+from .auto_scaling import AutoScaler, LoadBalancer, ResourceAllocation, ScalingPolicy
+from .production_router import ProductionMoERouter
 
 # Framework-specific implementations (optional imports)
 try:
@@ -47,7 +54,22 @@ __all__ = [
     "__version__",
     # Core components
     "DynamicRouter",
-    "AdaptiveRouter",
+    "EnhancedDynamicRouter",
+    "SecureEnhancedRouter",
+    "AdaptiveLoadBalancer",
+    "SecurityValidator",
+    "RobustErrorHandler",
+    "ResourceMonitor",
+    "HealthMonitor",
+    "HealthMetric",
+    "PerformanceSnapshot",
+    "PerformanceOptimizer",
+    "ConcurrentRouter",
+    "AutoScaler",
+    "LoadBalancer",
+    "ResourceAllocation",
+    "ScalingPolicy",
+    "ProductionMoERouter",
     "ComplexityEstimator",
     "GradientNormEstimator",
     "AttentionEntropyEstimator",
