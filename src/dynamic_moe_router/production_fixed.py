@@ -12,8 +12,6 @@ import threading
 import numpy as np
 
 from .router import DynamicRouter
-from .monitoring import EnhancedPerformanceMonitor
-from .security import RouterSecurityPolicy
 from .exceptions import RouterConfigurationError, DynamicMoEError
 
 logger = logging.getLogger(__name__)
@@ -73,18 +71,8 @@ class ProductionRouter:
             min_experts=self.config.min_experts,
             max_experts=self.config.max_experts,
             complexity_estimator=self.config.complexity_estimator,
-            routing_strategy=self.config.routing_strategy,
-            enable_security=self.config.enable_security,
-            enable_monitoring=self.config.enable_monitoring,
+            routing_strategy=self.config.routing_strategy
         )
-        
-        # Security policy
-        if self.config.enable_security:
-            self.security_policy = RouterSecurityPolicy()
-        
-        # Enhanced monitoring
-        if self.config.enable_monitoring:
-            self.performance_monitor = EnhancedPerformanceMonitor()
     
     def route(self, hidden_states: Any, **kwargs) -> Dict[str, Any]:
         """Production route method with comprehensive error handling."""
