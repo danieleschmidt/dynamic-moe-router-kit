@@ -49,3 +49,18 @@ class BackendError(DynamicMoEError):
 class ConvergenceError(DynamicMoEError):
     """Raised when adaptive algorithms fail to converge."""
     pass
+
+
+class SecurityValidationError(DynamicMoEError):
+    """Raised when security validation fails."""
+    pass
+
+
+class ResourceExhaustionError(DynamicMoEError):
+    """Raised when system resources are exhausted."""
+    pass
+
+
+class InputValidationError(DynamicMoEError):
+    """Raised when input validation fails."""
+    pass
