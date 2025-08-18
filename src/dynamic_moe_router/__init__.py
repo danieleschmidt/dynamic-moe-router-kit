@@ -25,6 +25,49 @@ from .high_performance import PerformanceOptimizer, ConcurrentRouter
 from .auto_scaling import AutoScaler, LoadBalancer, ResourceAllocation, ScalingPolicy
 from .production_router import ProductionMoERouter
 
+# Novel 2024 Research Algorithms
+from .quadratic_attention_router import (
+    QuadraticAttentionGate,
+    DynamicAttentionAllocationRouter,
+    QuadraticAttentionDynamicRouter
+)
+from .heterogeneous_experts import (
+    ExpertType,
+    ExpertCapability,
+    BaseExpert,
+    DeepExpert,
+    AttentionExpert,
+    FocalExpert,
+    HeterogeneousExpertPool
+)
+from .research_validation_framework import (
+    ExperimentConfig,
+    PerformanceMetrics,
+    RoutingAlgorithmValidator,
+    StaticTopKBaseline,
+    RandomRoutingBaseline,
+    ExperimentalDataGenerator,
+    StatisticalAnalyzer
+)
+from .advanced_validation import (
+    ValidationConfig,
+    InputValidator,
+    NumericalStabilityChecker,
+    ResourceMonitor,
+    GracefulDegradationHandler,
+    AdvancedValidator
+)
+from .high_performance_v2 import (
+    PerformanceConfig,
+    SIMDVectorizer,
+    MemoryPool,
+    AsyncRoutingProcessor,
+    DistributedRoutingCoordinator,
+    AutoScalingManager,
+    PerformanceProfiler,
+    HighPerformanceRoutingSystem
+)
+
 # Framework-specific implementations (optional imports)
 try:
     import torch
@@ -82,6 +125,38 @@ __all__ = [
     "LayerNormMoE",
     "FLOPProfiler",
     "ComparisonProfiler",
+    # Novel 2024 Research Algorithms
+    "QuadraticAttentionGate",
+    "DynamicAttentionAllocationRouter", 
+    "QuadraticAttentionDynamicRouter",
+    "ExpertType",
+    "ExpertCapability",
+    "BaseExpert",
+    "DeepExpert",
+    "AttentionExpert",
+    "FocalExpert",
+    "HeterogeneousExpertPool",
+    "ExperimentConfig",
+    "PerformanceMetrics",
+    "RoutingAlgorithmValidator",
+    "StaticTopKBaseline",
+    "RandomRoutingBaseline",
+    "ExperimentalDataGenerator",
+    "StatisticalAnalyzer",
+    "ValidationConfig",
+    "InputValidator",
+    "NumericalStabilityChecker",
+    "ResourceMonitor",
+    "GracefulDegradationHandler",
+    "AdvancedValidator",
+    "PerformanceConfig",
+    "SIMDVectorizer",
+    "MemoryPool",
+    "AsyncRoutingProcessor",
+    "DistributedRoutingCoordinator",
+    "AutoScalingManager",
+    "PerformanceProfiler",
+    "HighPerformanceRoutingSystem"
 ]
 
 # Add PyTorch components if available
