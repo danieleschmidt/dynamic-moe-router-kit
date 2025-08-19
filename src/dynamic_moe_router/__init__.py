@@ -31,6 +31,33 @@ from .quadratic_attention_router import (
     DynamicAttentionAllocationRouter,
     QuadraticAttentionDynamicRouter
 )
+
+# Next-Generation 2025 Advanced Implementations
+from .neural_adaptive_router import (
+    NeuralAdaptiveRouter,
+    NeuralRoutingConfig,
+    ExperienceBuffer,
+    MultiObjectiveOptimizer,
+    create_neural_adaptive_router
+)
+from .quantum_resilient_router import (
+    QuantumResilientRouter,
+    ResilienceConfig,
+    QuantumErrorCorrection,
+    ByzantineFaultTolerance,
+    SelfHealingTopology,
+    ChaosEngineering,
+    create_quantum_resilient_router
+)
+from .hyperdimensional_optimizer import (
+    HyperdimensionalOptimizer,
+    HyperOptimizationConfig,
+    HyperdimensionalVector,
+    QuantumSuperposition,
+    TensorDecompositionOptimizer,
+    NeuralArchitectureSearch,
+    create_hyperdimensional_optimizer
+)
 from .heterogeneous_experts import (
     ExpertType,
     ExpertCapability,
@@ -156,7 +183,27 @@ __all__ = [
     "DistributedRoutingCoordinator",
     "AutoScalingManager",
     "PerformanceProfiler",
-    "HighPerformanceRoutingSystem"
+    "HighPerformanceRoutingSystem",
+    # Next-Generation 2025 Advanced Components
+    "NeuralAdaptiveRouter",
+    "NeuralRoutingConfig", 
+    "ExperienceBuffer",
+    "MultiObjectiveOptimizer",
+    "create_neural_adaptive_router",
+    "QuantumResilientRouter",
+    "ResilienceConfig",
+    "QuantumErrorCorrection",
+    "ByzantineFaultTolerance",
+    "SelfHealingTopology",
+    "ChaosEngineering", 
+    "create_quantum_resilient_router",
+    "HyperdimensionalOptimizer",
+    "HyperOptimizationConfig",
+    "HyperdimensionalVector",
+    "QuantumSuperposition",
+    "TensorDecompositionOptimizer",
+    "NeuralArchitectureSearch",
+    "create_hyperdimensional_optimizer"
 ]
 
 # Add PyTorch components if available
