@@ -64,3 +64,13 @@ class ResourceExhaustionError(DynamicMoEError):
 class InputValidationError(DynamicMoEError):
     """Raised when input validation fails."""
     pass
+
+
+class PerformanceError(DynamicMoEError):
+    """Raised when performance issues are detected."""
+    pass
+
+
+class ProfilingError(DynamicMoEError):
+    """Raised when profiling operations fail."""
+    pass

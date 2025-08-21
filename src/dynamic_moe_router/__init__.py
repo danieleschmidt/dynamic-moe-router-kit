@@ -23,7 +23,8 @@ from .robust_security import SecurityValidator, RobustErrorHandler, ResourceMoni
 from .health_monitoring import HealthMonitor, HealthMetric, PerformanceSnapshot
 from .high_performance import PerformanceOptimizer, ConcurrentRouter
 from .auto_scaling import AutoScaler, LoadBalancer, ResourceAllocation, ScalingPolicy
-from .production_router import ProductionMoERouter
+# from .production_router import ProductionMoERouter
+from .production_fixed import ProductionRouter as ProductionMoERouter, RouterFactory
 
 # Novel 2024 Research Algorithms
 from .quadratic_attention_router import (
