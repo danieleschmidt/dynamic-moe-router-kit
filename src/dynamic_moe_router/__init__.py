@@ -26,6 +26,58 @@ from .auto_scaling import AutoScaler, LoadBalancer, ResourceAllocation, ScalingP
 # from .production_router import ProductionMoERouter
 from .production_fixed import ProductionRouter as ProductionMoERouter, RouterFactory
 
+# 2025 Breakthrough: Federated Privacy-Preserving MoE Routing Research
+from .federated_privacy_router import (
+    FederatedPrivacyRouter,
+    PrivacyConfig,
+    FederatedConfig,
+    FederatedRole,
+    PrivacyMechanism,
+    PrivacyAccountant,
+    RDPAccountant,
+    SecureAggregator,
+    PrivacyPreservingRouter,
+    PrivacyUtilityEvaluator,
+    create_federated_privacy_router,
+    demonstrate_federated_privacy_routing
+)
+from .federated_privacy_enhanced import (
+    EnhancedFederatedPrivacyRouter,
+    MonitoringConfig,
+    ValidationConfig,
+    SystemMonitor,
+    InputValidator,
+    CircuitBreaker,
+    AuditLogger,
+    AlertLevel,
+    CircuitState,
+    create_enhanced_federated_privacy_router
+)
+from .federated_privacy_optimized import (
+    OptimizedFederatedPrivacyRouter,
+    OptimizationConfig,
+    OptimizationLevel,
+    CompressionMethod,
+    MemoryPool,
+    LRUCache,
+    NetworkCompressor,
+    AsyncProcessor,
+    DistributedCoordinator,
+    LoadBalancer,
+    ConsensusProtocol,
+    create_optimized_federated_privacy_router
+)
+from .federated_privacy_research import (
+    ResearchValidator,
+    ExperimentConfig as FederatedExperimentConfig,
+    BaselineMethod,
+    CentralizedBaseline,
+    FederatedAveragingBaseline,
+    DPFederatedAveragingBaseline,
+    LocalPrivacyBaseline,
+    run_research_validation
+)
+
 # Novel 2024 Research Algorithms
 from .quadratic_attention_router import (
     QuadraticAttentionGate,
@@ -153,6 +205,49 @@ __all__ = [
     "LayerNormMoE",
     "FLOPProfiler",
     "ComparisonProfiler",
+    # 2025 Breakthrough: Federated Privacy-Preserving MoE Components
+    "FederatedPrivacyRouter",
+    "EnhancedFederatedPrivacyRouter",
+    "OptimizedFederatedPrivacyRouter",
+    "PrivacyConfig",
+    "FederatedConfig",
+    "FederatedRole",
+    "PrivacyMechanism",
+    "PrivacyAccountant",
+    "RDPAccountant",
+    "SecureAggregator",
+    "PrivacyPreservingRouter",
+    "PrivacyUtilityEvaluator",
+    "create_federated_privacy_router",
+    "create_enhanced_federated_privacy_router",
+    "create_optimized_federated_privacy_router",
+    "demonstrate_federated_privacy_routing",
+    "MonitoringConfig",
+    "ValidationConfig",
+    "SystemMonitor",
+    "InputValidator",
+    "CircuitBreaker",
+    "AuditLogger",
+    "AlertLevel",
+    "CircuitState",
+    "OptimizationConfig",
+    "OptimizationLevel",
+    "CompressionMethod",
+    "MemoryPool",
+    "LRUCache",
+    "NetworkCompressor",
+    "AsyncProcessor",
+    "DistributedCoordinator",
+    "LoadBalancer",
+    "ConsensusProtocol",
+    "ResearchValidator",
+    "FederatedExperimentConfig",
+    "BaselineMethod",
+    "CentralizedBaseline",
+    "FederatedAveragingBaseline",
+    "DPFederatedAveragingBaseline",
+    "LocalPrivacyBaseline",
+    "run_research_validation",
     # Novel 2024 Research Algorithms
     "QuadraticAttentionGate",
     "DynamicAttentionAllocationRouter", 
