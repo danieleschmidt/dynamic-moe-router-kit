@@ -557,10 +557,10 @@ class SelfModificationEngine:
     def _break_plateau(self, population: List[EvolutionGenome]):
         """Break performance plateaus with disruptive innovations."""
         # Identify stagnant genomes
-        stagnant = [g for g in population if len(g.performance_history) > 10 and
+        stagnant = [g for g in population if len(g.performance_history) > 10 and (
                    np.std(g.performance_history[-10:]) if HAS_NUMPY else (
                        sum((x - sum(g.performance_history[-10:])/10)**2 for x in g.performance_history[-10:]) / 10
-                   )**0.5 < 0.01]
+                   )**0.5) < 0.01]
         
         # Apply dramatic mutations
         for genome in stagnant[:len(population)//3]:
