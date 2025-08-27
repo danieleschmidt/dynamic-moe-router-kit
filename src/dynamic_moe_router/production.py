@@ -225,4 +225,89 @@ class ProductionRouter:
         """Graceful shutdown."""
         logger.info("Shutting down ProductionRouter...")
         self._health_status = "shutting_down"
-        logger.info("ProductionRouter shutdown complete")\n\n\nclass RouterFactory:\n    \"\"\"Factory for creating production routers.\"\"\"\n    \n    @staticmethod\n    def create_from_config_file(config_path: str) -> ProductionRouter:\n        \"\"\"Create router from JSON/YAML config file.\"\"\"\n        with open(config_path, 'r') as f:\n            if config_path.endswith('.yaml') or config_path.endswith('.yml'):\n                import yaml\n                config_dict = yaml.safe_load(f)\n            else:\n                config_dict = json.load(f)\n        \n        config = ProductionConfig(**config_dict)\n        return ProductionRouter(config)\n    \n    @staticmethod\n    def create_from_environment() -> ProductionRouter:\n        \"\"\"Create router from environment variables.\"\"\"\n        config = ProductionConfig(\n            input_dim=int(os.getenv('MOE_INPUT_DIM', '768')),\n            num_experts=int(os.getenv('MOE_NUM_EXPERTS', '8')),\n            min_experts=int(os.getenv('MOE_MIN_EXPERTS', '1')),\n            max_experts=int(os.getenv('MOE_MAX_EXPERTS', '4')),\n            complexity_estimator=os.getenv('MOE_COMPLEXITY_ESTIMATOR', 'gradient_norm'),\n            enable_caching=os.getenv('MOE_ENABLE_CACHING', 'true').lower() == 'true',\n            enable_parallel_processing=os.getenv('MOE_ENABLE_PARALLEL', 'true').lower() == 'true',\n            enable_security=os.getenv('MOE_ENABLE_SECURITY', 'true').lower() == 'true',\n            security_level=os.getenv('MOE_SECURITY_LEVEL', 'standard'),\n            max_memory_mb=float(os.getenv('MOE_MAX_MEMORY_MB', '4000')),\n            request_timeout=float(os.getenv('MOE_REQUEST_TIMEOUT', '30')),\n            metrics_log_file=os.getenv('MOE_METRICS_LOG_FILE')\n        )\n        \n        return ProductionRouter(config)\n    \n    @staticmethod\n    def create_optimized_for_inference() -> ProductionRouter:\n        \"\"\"Create router optimized for inference workloads.\"\"\"\n        config = ProductionConfig(\n            input_dim=768,\n            num_experts=8,\n            min_experts=1,\n            max_experts=3,\n            enable_caching=True,\n            enable_parallel_processing=True,\n            enable_compute_optimization=True,\n            cache_size=10000,  # Large cache for inference\n            parallel_threshold_size=500,  # Lower threshold for parallel processing\n            enable_security=True,\n            security_level=\"standard\",\n            enable_resilience=True,\n            circuit_breaker_failure_threshold=3,\n            retry_max_attempts=2\n        )\n        \n        return ProductionRouter(config)\n    \n    @staticmethod\n    def create_optimized_for_training() -> ProductionRouter:\n        \"\"\"Create router optimized for training workloads.\"\"\"\n        config = ProductionConfig(\n            input_dim=1024,\n            num_experts=16,\n            min_experts=2,\n            max_experts=8,\n            enable_caching=False,  # Training data is typically unique\n            enable_parallel_processing=True,\n            enable_compute_optimization=True,\n            parallel_threshold_size=2000,  # Higher threshold (larger batches)\n            enable_security=True,\n            security_level=\"minimal\",  # Less security overhead\n            enable_resilience=False,  # Training can handle failures differently\n            max_memory_mb=8000,  # More memory for training\n            request_timeout=60.0  # Longer timeout for training\n        )\n        \n        return ProductionRouter(config)
+        logger.info("ProductionRouter shutdown complete")
+
+
+class RouterFactory:
+    """Factory for creating production routers."""
+    
+    @staticmethod
+    def create_from_config_file(config_path: str) -> ProductionRouter:
+        """Create router from JSON/YAML config file."""
+        import json
+        with open(config_path, 'r') as f:
+            if config_path.endswith('.yaml') or config_path.endswith('.yml'):
+                try:
+                    import yaml
+                    config_dict = yaml.safe_load(f)
+                except ImportError:
+                    raise ImportError("PyYAML is required for YAML config files")
+            else:
+                config_dict = json.load(f)
+        
+        config = ProductionConfig(**config_dict)
+        return ProductionRouter(config)
+    
+    @staticmethod
+    def create_from_environment() -> ProductionRouter:
+        """Create router from environment variables."""
+        import os
+        config = ProductionConfig(
+            input_dim=int(os.getenv('MOE_INPUT_DIM', '768')),
+            num_experts=int(os.getenv('MOE_NUM_EXPERTS', '8')),
+            min_experts=int(os.getenv('MOE_MIN_EXPERTS', '1')),
+            max_experts=int(os.getenv('MOE_MAX_EXPERTS', '4')),
+            complexity_estimator=os.getenv('MOE_COMPLEXITY_ESTIMATOR', 'gradient_norm'),
+            enable_caching=os.getenv('MOE_ENABLE_CACHING', 'true').lower() == 'true',
+            enable_parallel_processing=os.getenv('MOE_ENABLE_PARALLEL', 'true').lower() == 'true',
+            enable_security=os.getenv('MOE_ENABLE_SECURITY', 'true').lower() == 'true',
+            security_level=os.getenv('MOE_SECURITY_LEVEL', 'standard'),
+            max_memory_mb=float(os.getenv('MOE_MAX_MEMORY_MB', '4000')),
+            request_timeout=float(os.getenv('MOE_REQUEST_TIMEOUT', '30')),
+            metrics_log_file=os.getenv('MOE_METRICS_LOG_FILE')
+        )
+        
+        return ProductionRouter(config)
+    
+    @staticmethod
+    def create_optimized_for_inference() -> ProductionRouter:
+        """Create router optimized for inference workloads."""
+        config = ProductionConfig(
+            input_dim=768,
+            num_experts=8,
+            min_experts=1,
+            max_experts=3,
+            enable_caching=True,
+            enable_parallel_processing=True,
+            enable_compute_optimization=True,
+            cache_size=10000,
+            parallel_threshold_size=500,
+            enable_security=True,
+            security_level="standard",
+            enable_resilience=True,
+            circuit_breaker_failure_threshold=3,
+            retry_max_attempts=2
+        )
+        
+        return ProductionRouter(config)
+    
+    @staticmethod
+    def create_optimized_for_training() -> ProductionRouter:
+        """Create router optimized for training workloads."""
+        config = ProductionConfig(
+            input_dim=1024,
+            num_experts=16,
+            min_experts=2,
+            max_experts=8,
+            enable_caching=False,
+            enable_parallel_processing=True,
+            enable_compute_optimization=True,
+            parallel_threshold_size=2000,
+            enable_security=True,
+            security_level="minimal",
+            enable_resilience=False,
+            max_memory_mb=8000,
+            request_timeout=60.0
+        )
+        
+        return ProductionRouter(config)
